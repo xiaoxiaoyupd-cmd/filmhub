@@ -352,7 +352,127 @@ body {
   color: var(--text2);
 }
 
-/* 演员行 */
+/* ============================================
+   通话单 v2 新增样式
+   ============================================ */
+
+/* 时间轴网格 */
+.timeline-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.tl-item {
+  display: flex; flex-direction: column; gap: 4px;
+}
+.tl-item label {
+  font-size: 0.7rem; font-weight: 600; color: var(--text2);
+}
+.tl-item input[type="time"] {
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--font);
+  font-size: 0.82rem;
+  color: var(--text);
+  background: #FAFAFC;
+  outline: none;
+}
+.tl-item input[type="time"]:focus {
+  border-color: var(--primary);
+  background: var(--white);
+}
+
+/* 表格容器 */
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 通告单内表格 */
+.cs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+.cs-table thead th {
+  padding: 7px 5px;
+  text-align: left;
+  font-weight: 700;
+  font-size: 0.68rem;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  border-bottom: 2px solid var(--border);
+  white-space: nowrap;
+  background: #FAFAFC;
+}
+.cs-table tbody td {
+  padding: 4px 3px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.cs-table tbody tr:hover { background: #FAFAFC; }
+.cs-table input,
+.cs-table select {
+  width: 100%;
+  padding: 5px 6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  font-family: var(--font);
+  font-size: 0.75rem;
+  color: var(--text);
+  outline: none;
+  background: transparent;
+  transition: all 0.15s;
+  min-width: 50px;
+}
+.cs-table input:hover,
+.cs-table select:hover { border-color: var(--border); background: #FAFAFC; }
+.cs-table input:focus,
+.cs-table select:focus { border-color: var(--primary); background: var(--white); }
+.cs-table select { cursor: pointer; }
+
+/* 工作人员部门网格 */
+.crew-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.crew-grid .form-group label {
+  font-size: 0.72rem; font-weight: 700;
+}
+
+/* 预览区内补充样式 */
+.cs-sec-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  margin: 14px 0 6px;
+  padding: 4px 10px;
+  background: #F5F5F7;
+  border-left: 3px solid var(--primary);
+  border-radius: 0 4px 4px 0;
+}
+.cs-sub-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.73rem;
+  margin-bottom: 8px;
+}
+.cs-sub-table th {
+  font-weight: 700;
+  background: #FAFAFC;
+  font-size: 0.65rem;
+  padding: 4px 5px;
+  border: 1px solid #DDD;
+  text-align: left;
+}
+.cs-sub-table td {
+  padding: 4px 5px;
+  border: 1px solid #DDD;
+}
+
+/* 旧演员行（已弃用，保留兼容） */
 .cast-row {
   display: flex; gap: 6px; align-items: center;
   margin-bottom: 6px;

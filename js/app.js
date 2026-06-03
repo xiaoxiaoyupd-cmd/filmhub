@@ -38,154 +38,286 @@ function showToast(msg) {
 }
 
 // ============================================
-// 通告单生成器
+// 通告单 v2 — 8板块完整版
 // ============================================
 
-function addCastRow() {
-  const div = document.createElement('div');
-  div.className = 'cast-row';
-  div.innerHTML = `
-    <input type="text" class="cast-role" placeholder="角色">
-    <input type="text" class="cast-actor" placeholder="演员名">
-    <input type="text" class="cast-call" placeholder="化妆/到场时间">
-    <input type="text" class="cast-scene" placeholder="拍摄场次">
-    <input type="text" class="cast-remark" placeholder="备注">
-    <button class="btn-icon btn-del" onclick="removeCastRow(this)" title="删除">✕</button>
+// --- 场次表格 ---
+function addSceneRow() {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><input type="text" class="cs-scene-num" placeholder="1"></td>
+    <td><select class="cs-scene-io"><option>内</option><option>外</option><option>内外</option></select></td>
+    <td><select class="cs-scene-dn"><option>日</option><option>夜</option><option>日夜</option></select></td>
+    <td><input type="text" class="cs-scene-pages" placeholder="2页"></td>
+    <td><input type="text" class="cs-scene-desc" placeholder="拍摄内容简述"></td>
+    <td><input type="text" class="cs-scene-lead" placeholder="主演名"></td>
+    <td><input type="text" class="cs-scene-extras" placeholder="数量" style="width:50px;"></td>
+    <td><input type="text" class="cs-scene-loc" placeholder="拍摄地点"></td>
+    <td><button class="btn-icon btn-del" onclick="removeSceneRow(this)" title="删除">✕</button></td>
   `;
-  document.getElementById('cs-cast-list').appendChild(div);
+  document.getElementById('cs-scene-tbody').appendChild(tr);
+}
+
+function removeSceneRow(btn) {
+  const tbody = document.getElementById('cs-scene-tbody');
+  if (tbody.querySelectorAll('tr').length <= 1) {
+    tbody.querySelectorAll('input').forEach(inp => inp.value = '');
+    return;
+  }
+  btn.closest('tr').remove();
+}
+
+function getSceneData() {
+  const rows = document.querySelectorAll('#cs-scene-tbody tr');
+  const data = [];
+  rows.forEach(row => {
+    const d = {
+      num: row.querySelector('.cs-scene-num')?.value?.trim() || '',
+      io: row.querySelector('.cs-scene-io')?.value || '',
+      dn: row.querySelector('.cs-scene-dn')?.value || '',
+      pages: row.querySelector('.cs-scene-pages')?.value?.trim() || '',
+      desc: row.querySelector('.cs-scene-desc')?.value?.trim() || '',
+      lead: row.querySelector('.cs-scene-lead')?.value?.trim() || '',
+      extras: row.querySelector('.cs-scene-extras')?.value?.trim() || '',
+      loc: row.querySelector('.cs-scene-loc')?.value?.trim() || ''
+    };
+    if (d.num || d.desc) data.push(d);
+  });
+  return data;
+}
+
+// --- 演员表格 ---
+function addCastRow() {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><input type="text" class="cast-role" placeholder="角色名"></td>
+    <td><input type="text" class="cast-actor" placeholder="演员名"></td>
+    <td><input type="time" class="cast-makeup" value="05:30"></td>
+    <td><input type="time" class="cast-arrive" value="06:30"></td>
+    <td><input type="text" class="cast-scenes" placeholder="场1,场3"></td>
+    <td><input type="text" class="cast-note" placeholder="备注"></td>
+    <td><button class="btn-icon btn-del" onclick="removeCastRow(this)" title="删除">✕</button></td>
+  `;
+  document.getElementById('cs-cast-tbody').appendChild(tr);
 }
 
 function removeCastRow(btn) {
-  const rows = document.querySelectorAll('#cs-cast-list .cast-row');
-  if (rows.length <= 1) {
-    // 清空第一行而不是删除
-    rows[0].querySelectorAll('input').forEach(inp => inp.value = '');
+  const tbody = document.getElementById('cs-cast-tbody');
+  if (tbody.querySelectorAll('tr').length <= 1) {
+    tbody.querySelectorAll('input').forEach(inp => inp.value = '');
     return;
   }
-  btn.closest('.cast-row').remove();
+  btn.closest('tr').remove();
 }
 
 function getCastData() {
-  const rows = document.querySelectorAll('#cs-cast-list .cast-row');
+  const rows = document.querySelectorAll('#cs-cast-tbody tr');
   const data = [];
   rows.forEach(row => {
-    const inputs = row.querySelectorAll('input');
     const d = {
-      role: inputs[0].value.trim(),
-      actor: inputs[1].value.trim(),
-      calltime: inputs[2].value.trim(),
-      scene: inputs[3].value.trim(),
-      remark: inputs[4].value.trim()
+      role: row.querySelector('.cast-role')?.value?.trim() || '',
+      actor: row.querySelector('.cast-actor')?.value?.trim() || '',
+      makeup: row.querySelector('.cast-makeup')?.value || '',
+      arrive: row.querySelector('.cast-arrive')?.value || '',
+      scenes: row.querySelector('.cast-scenes')?.value?.trim() || '',
+      note: row.querySelector('.cast-note')?.value?.trim() || ''
     };
     if (d.role || d.actor) data.push(d);
   });
   return data;
 }
 
+// --- 车辆表格 ---
+function addVehicleRow() {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><input type="text" class="v-plate" placeholder="京A12345"></td>
+    <td><input type="text" class="v-driver" placeholder="司机名"></td>
+    <td><input type="text" class="v-phone" placeholder="138xxxx"></td>
+    <td><input type="text" class="v-riders" placeholder="张三、李四"></td>
+    <td><button class="btn-icon btn-del" onclick="removeVehicleRow(this)" title="删除">✕</button></td>
+  `;
+  document.getElementById('cs-vehicle-tbody').appendChild(tr);
+}
+
+function removeVehicleRow(btn) {
+  const tbody = document.getElementById('cs-vehicle-tbody');
+  if (tbody.querySelectorAll('tr').length <= 1) {
+    tbody.querySelectorAll('input').forEach(inp => inp.value = '');
+    return;
+  }
+  btn.closest('tr').remove();
+}
+
+function getVehicleData() {
+  const rows = document.querySelectorAll('#cs-vehicle-tbody tr');
+  const data = [];
+  rows.forEach(row => {
+    const d = {
+      plate: row.querySelector('.v-plate')?.value?.trim() || '',
+      driver: row.querySelector('.v-driver')?.value?.trim() || '',
+      phone: row.querySelector('.v-phone')?.value?.trim() || '',
+      riders: row.querySelector('.v-riders')?.value?.trim() || ''
+    };
+    if (d.plate || d.driver) data.push(d);
+  });
+  return data;
+}
+
+// --- 部门工作人员 ---
+function getDept(name) {
+  return document.getElementById('cs-dept-' + name)?.value?.trim() || '';
+}
+function getDeptData() {
+  return ['director','producer','camera','art','light','sound','makeup','grip']
+    .map(k => ({ key: k, val: getDept(k) }))
+    .filter(d => d.val);
+}
+
+// --- 时间轴 ---
+function getTimeline() {
+  return {
+    call: document.getElementById('cs-t-call')?.value || '',
+    breakfast: document.getElementById('cs-t-breakfast')?.value || '',
+    depart: document.getElementById('cs-t-depart')?.value || '',
+    start: document.getElementById('cs-t-start')?.value || '',
+    lunch: document.getElementById('cs-t-lunch')?.value || '',
+    transfer: document.getElementById('cs-t-transfer')?.value || '',
+    wrap: document.getElementById('cs-t-wrap')?.value || ''
+  };
+}
+
+// --- 生成预览 ---
 function generateCallSheet() {
-  const project = document.getElementById('cs-project').value.trim() || '未命名项目';
-  const date = document.getElementById('cs-date').value || '____年__月__日';
-  const day = document.getElementById('cs-day').value.trim() || '';
-  const calltime = document.getElementById('cs-calltime').value || '';
-  const sun = document.getElementById('cs-sun').value.trim() || '';
-  const weather = document.getElementById('cs-weather').value.trim() || '';
-  const location = document.getElementById('cs-location').value.trim() || '';
-  const parking = document.getElementById('cs-parking').value.trim() || '';
-  const scenes = document.getElementById('cs-scenes').value.trim() || '';
-  const crew = document.getElementById('cs-crew').value.trim() || '';
-  const notes = document.getElementById('cs-notes').value.trim() || '';
+  const project = val('cs-project') || '未命名项目';
+  const date = val('cs-date') || '____年__月__日';
+  const day = val('cs-day') || '';
+  const producer = val('cs-producer') || '';
+  const assistant = val('cs-assistant') || '';
+  const weather = val('cs-weather') || '';
+  const sun = val('cs-sun') || '';
+  const location = val('cs-location') || '';
+  const parking = val('cs-parking') || '';
+  const tl = getTimeline();
+  const scenes = getSceneData();
   const cast = getCastData();
+  const depts = getDeptData();
+  const vehicles = getVehicleData();
+  const noteSafety = val('cs-note-safety') || '';
+  const noteWeather = val('cs-note-weather') || '';
+  const noteSpecial = val('cs-note-special') || '';
 
-  const preview = document.getElementById('cs-preview-content');
-  const empty = document.getElementById('cs-preview-empty');
+  let html = `
+    <h2>🎬 拍 摄 通 告 单</h2>
+    <div class="cs-subtitle">${project} ${day ? '('+day+')' : ''}</div>
+    <!-- 项目信息 -->
+    <table>
+      <tr><td class="td-label">项目名称</td><td><strong>${project}</strong></td><td class="td-label">通告日期</td><td>${date}</td></tr>
+      <tr><td class="td-label">制片主任</td><td>${producer||'-'}</td><td class="td-label">副导演</td><td>${assistant||'-'}</td></tr>
+      <tr><td class="td-label">天气</td><td>${weather||'-'}</td><td class="td-label">日出/日落</td><td>${sun||'-'}</td></tr>
+      <tr><td class="td-label">拍摄地点</td><td colspan="3">${location||'-'}${parking ? '（'+parking+'）' : ''}</td></tr>
+    </table>`;
 
-  let castRows = '';
-  if (cast.length > 0) {
-    castRows = `
-      <tr><td class="td-label">演员通告</td><td>
-        <table style="width:100%;border:none;margin:-5px -8px;">
-          <tr style="font-weight:700;font-size:0.7rem;background:#F0F0F2;">
-            <td style="border:none;">角色</td><td style="border:none;">演员</td>
-            <td style="border:none;">化妆/到场</td><td style="border:none;">拍摄场次</td><td style="border:none;">备注</td>
-          </tr>
-          ${cast.map(c => `
-            <tr>
-              <td style="border:none;">${c.role || '-'}</td>
-              <td style="border:none;">${c.actor || '-'}</td>
-              <td style="border:none;">${c.calltime || '-'}</td>
-              <td style="border:none;">${c.scene || '-'}</td>
-              <td style="border:none;">${c.remark || '-'}</td>
-            </tr>`).join('')}
-        </table>
-      </td></tr>`;
+  // 时间轴
+  const tlItems = [
+    ['集合', tl.call], ['早餐', tl.breakfast], ['出发', tl.depart], ['开机', tl.start],
+    ['午餐', tl.lunch], ['转场', tl.transfer], ['收工', tl.wrap]
+  ].filter(i => i[1]);
+  if (tlItems.length) {
+    html += `<div class="cs-sec-title">⏱️ 时间轴</div><table><tr>`;
+    tlItems.forEach(i => { html += `<td class="td-label" style="width:auto;">${i[0]}</td><td>${i[1]}</td>`; });
+    html += `</tr></table>`;
   }
 
-  preview.innerHTML = `
-    <h2>🎬 拍 摄 通 告 单</h2>
-    <div class="cs-subtitle">${project}</div>
-    <table>
-      <tr><td class="td-label">项目名称</td><td><strong>${project}</strong> ${day ? '（'+day+'）' : ''}</td></tr>
-      <tr><td class="td-label">通告日期</td><td>${date}</td></tr>
-      <tr><td class="td-label">集合时间</td><td><strong>${calltime}</strong></td></tr>
-      ${sun ? `<tr><td class="td-label">日出/日落</td><td>${sun}</td></tr>` : ''}
-      ${weather ? `<tr><td class="td-label">天气</td><td>${weather}</td></tr>` : ''}
-      <tr><td class="td-label">拍摄地点</td><td>${location}</td></tr>
-      ${parking ? `<tr><td class="td-label">停车/交通</td><td>${parking}</td></tr>` : ''}
-      ${scenes ? `<tr><td class="td-label">拍摄场次</td><td style="white-space:pre-wrap;">${scenes}</td></tr>` : ''}
-      ${castRows}
-      ${crew ? `<tr><td class="td-label">工作人员</td><td style="white-space:pre-wrap;">${crew}</td></tr>` : ''}
-      ${notes ? `<tr><td class="td-label">备注</td><td style="white-space:pre-wrap;">${notes}</td></tr>` : ''}
-    </table>
-  `;
+  // 场次安排
+  if (scenes.length) {
+    html += `<div class="cs-sec-title">🎬 场次安排</div>
+    <table class="cs-sub-table">
+      <tr><th>场号</th><th>内外</th><th>日夜</th><th>页数</th><th>拍摄内容</th><th>主演</th><th>群演</th><th>地点</th></tr>
+      ${scenes.map(s => `<tr><td>${esc(s.num)}</td><td>${s.io}</td><td>${s.dn}</td><td>${esc(s.pages)}</td><td>${esc(s.desc)}</td><td>${esc(s.lead)}</td><td>${esc(s.extras)}</td><td>${esc(s.loc)}</td></tr>`).join('')}
+    </table>`;
+  }
 
-  empty.style.display = 'none';
-  preview.style.display = 'block';
+  // 演员通告
+  if (cast.length) {
+    html += `<div class="cs-sec-title">🎭 演员通告</div>
+    <table class="cs-sub-table">
+      <tr><th>角色</th><th>演员</th><th>化妆时间</th><th>到场时间</th><th>拍摄场次</th><th>备注</th></tr>
+      ${cast.map(c => `<tr><td>${esc(c.role)}</td><td><strong>${esc(c.actor)}</strong></td><td>${c.makeup||'-'}</td><td>${c.arrive||'-'}</td><td>${esc(c.scenes)}</td><td>${esc(c.note)}</td></tr>`).join('')}
+    </table>`;
+  }
+
+  // 工作人员
+  if (depts.length) {
+    html += `<div class="cs-sec-title">👥 工作人员</div><table>`;
+    depts.forEach(d => {
+      const names = { director:'导演组', producer:'制片组', camera:'摄影组', art:'美术组', light:'灯光组', sound:'录音组', makeup:'化妆组', grip:'场务组' };
+      html += `<tr><td class="td-label">${names[d.key]||d.key}</td><td style="white-space:pre-wrap;">${esc(d.val)}</td></tr>`;
+    });
+    html += `</table>`;
+  }
+
+  // 车辆安排
+  if (vehicles.length) {
+    html += `<div class="cs-sec-title">🚗 车辆安排</div>
+    <table class="cs-sub-table">
+      <tr><th>车牌号</th><th>司机</th><th>联系电话</th><th>乘车人员</th></tr>
+      ${vehicles.map(v => `<tr><td>${esc(v.plate)}</td><td>${esc(v.driver)}</td><td>${esc(v.phone)}</td><td>${esc(v.riders)}</td></tr>`).join('')}
+    </table>`;
+  }
+
+  // 注意事项
+  if (noteSafety || noteWeather || noteSpecial) {
+    html += `<div class="cs-sec-title">📝 注意事项</div><table>`;
+    if (noteSafety) html += `<tr><td class="td-label">安全提示</td><td style="white-space:pre-wrap;">${esc(noteSafety)}</td></tr>`;
+    if (noteWeather) html += `<tr><td class="td-label">天气提示</td><td style="white-space:pre-wrap;">${esc(noteWeather)}</td></tr>`;
+    if (noteSpecial) html += `<tr><td class="td-label">特殊通知</td><td style="white-space:pre-wrap;">${esc(noteSpecial)}</td></tr>`;
+    html += `</table>`;
+  }
+
+  document.getElementById('cs-preview-content').innerHTML = html;
+  document.getElementById('cs-preview-empty').style.display = 'none';
+  document.getElementById('cs-preview-content').style.display = 'block';
   document.getElementById('cs-preview-container').scrollIntoView({ behavior: 'smooth' });
 }
 
+// --- 导出打印 ---
 function exportCallSheet() {
-  const preview = document.getElementById('cs-preview-content');
-  if (preview.style.display === 'none') {
-    showToast('请先生成通告单');
-    return;
+  if (document.getElementById('cs-preview-content').style.display === 'none') {
+    showToast('请先生成通告单'); return;
   }
-  const content = document.getElementById('cs-preview').cloneNode(true);
-  content.querySelector('#cs-preview-empty').style.display = 'none';
-  content.querySelector('#cs-preview-content').style.display = 'block';
-
+  const content = document.getElementById('cs-preview-content').innerHTML;
   const win = window.open('', '_blank', 'width=800,height=900');
-  win.document.write(`
-    <!DOCTYPE html><html><head><meta charset="UTF-8"><title>拍摄通告单</title>
-    <style>
-      body { font-family: 'PingFang SC','Microsoft YaHei',sans-serif; padding: 30px 40px; color: #1D1D1F; max-width: 700px; margin: auto; }
-      h2 { text-align:center; font-size:1.4rem; letter-spacing:2px; }
-      .cs-subtitle { text-align:center; font-size:0.9rem; color:#6E6E73; margin-bottom:20px; }
-      table { width:100%; border-collapse:collapse; font-size:0.85rem; }
-      td { padding:6px 10px; border:1px solid #CCC; vertical-align:top; }
-      .td-label { font-weight:700; background:#F5F5F7; width:100px; color:#6E6E73; }
-      @media print { body { padding: 0; } }
-    </style></head><body>
-    ${content.querySelector('.cs-preview-content').innerHTML}
-    </body></html>
-  `);
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>拍摄通告单</title>
+<style>
+body{font-family:'PingFang SC','Microsoft YaHei',sans-serif;padding:24px 32px;color:#1D1D1F;max-width:750px;margin:auto;}
+h2{text-align:center;font-size:1.3rem;letter-spacing:3px;margin-bottom:2px;}
+.cs-subtitle{text-align:center;font-size:0.85rem;color:#6E6E73;margin-bottom:16px;}
+.cs-sec-title{font-size:0.8rem;font-weight:700;margin:14px 0 6px;padding:3px 8px;background:#F5F5F7;border-left:3px solid #0071E3;}
+table{width:100%;border-collapse:collapse;font-size:0.78rem;margin-bottom:8px;}
+td{padding:4px 8px;border:1px solid #DDD;vertical-align:top;}
+.td-label{font-weight:700;background:#FAFAFC;width:90px;color:#6E6E73;}
+.cs-sub-table th{font-weight:700;background:#F0F0F2;font-size:0.68rem;padding:3px 5px;border:1px solid #DDD;text-align:left;}
+.cs-sub-table td{padding:3px 5px;border:1px solid #DDD;font-size:0.73rem;}
+@media print{body{padding:0;}}
+</style></head><body>${content}</body></html>`);
   win.document.close();
   setTimeout(() => win.print(), 300);
 }
 
+// --- 保存/加载 ---
 function saveCallSheet() {
   const data = {
-    project: document.getElementById('cs-project').value,
-    date: document.getElementById('cs-date').value,
-    day: document.getElementById('cs-day').value,
-    calltime: document.getElementById('cs-calltime').value,
-    sun: document.getElementById('cs-sun').value,
-    weather: document.getElementById('cs-weather').value,
-    location: document.getElementById('cs-location').value,
-    parking: document.getElementById('cs-parking').value,
-    scenes: document.getElementById('cs-scenes').value,
-    crew: document.getElementById('cs-crew').value,
-    notes: document.getElementById('cs-notes').value,
-    cast: getCastData()
+    project:val('cs-project'), date:val('cs-date'), day:val('cs-day'),
+    producer:val('cs-producer'), assistant:val('cs-assistant'),
+    weather:val('cs-weather'), sun:val('cs-sun'),
+    location:val('cs-location'), parking:val('cs-parking'),
+    timeline: getTimeline(),
+    scenes: getSceneData(),
+    cast: getCastData(),
+    depts: getDeptData(),
+    vehicles: getVehicleData(),
+    notes: { safety: val('cs-note-safety'), weather: val('cs-note-weather'), special: val('cs-note-special') }
   };
   localStorage.setItem('fh_callsheet_draft', JSON.stringify(data));
   showToast('草稿已保存 💾');
@@ -196,40 +328,65 @@ function loadCallSheetDraft() {
     const raw = localStorage.getItem('fh_callsheet_draft');
     if (!raw) return;
     const d = JSON.parse(raw);
-    document.getElementById('cs-project').value = d.project || '';
-    document.getElementById('cs-date').value = d.date || '';
-    document.getElementById('cs-day').value = d.day || '';
-    document.getElementById('cs-calltime').value = d.calltime || '07:00';
-    document.getElementById('cs-sun').value = d.sun || '';
-    document.getElementById('cs-weather').value = d.weather || '';
-    document.getElementById('cs-location').value = d.location || '';
-    document.getElementById('cs-parking').value = d.parking || '';
-    document.getElementById('cs-scenes').value = d.scenes || '';
-    document.getElementById('cs-crew').value = d.crew || '';
-    document.getElementById('cs-notes').value = d.notes || '';
-
-    // 恢复演员表
-    if (d.cast && d.cast.length > 0) {
-      const container = document.getElementById('cs-cast-list');
-      container.innerHTML = '';
-      d.cast.forEach(c => {
-        const div = document.createElement('div');
-        div.className = 'cast-row';
-        div.innerHTML = `
-          <input type="text" class="cast-role" placeholder="角色" value="${esc(c.role||'')}">
-          <input type="text" class="cast-actor" placeholder="演员名" value="${esc(c.actor||'')}">
-          <input type="text" class="cast-call" placeholder="化妆/到场时间" value="${esc(c.calltime||'')}">
-          <input type="text" class="cast-scene" placeholder="拍摄场次" value="${esc(c.scene||'')}">
-          <input type="text" class="cast-remark" placeholder="备注" value="${esc(c.remark||'')}">
-          <button class="btn-icon btn-del" onclick="removeCastRow(this)" title="删除">✕</button>
-        `;
-        container.appendChild(div);
-      });
+    // 基础字段
+    setVal('cs-project',d.project); setVal('cs-date',d.date); setVal('cs-day',d.day);
+    setVal('cs-producer',d.producer); setVal('cs-assistant',d.assistant);
+    setVal('cs-weather',d.weather); setVal('cs-sun',d.sun);
+    setVal('cs-location',d.location); setVal('cs-parking',d.parking);
+    // 时间轴
+    if (d.timeline) {
+      setVal('cs-t-call',d.timeline.call); setVal('cs-t-breakfast',d.timeline.breakfast);
+      setVal('cs-t-depart',d.timeline.depart); setVal('cs-t-start',d.timeline.start);
+      setVal('cs-t-lunch',d.timeline.lunch); setVal('cs-t-transfer',d.timeline.transfer);
+      setVal('cs-t-wrap',d.timeline.wrap);
+    }
+    // 场次
+    if (d.scenes && d.scenes.length) restoreTable('cs-scene-tbody', d.scenes, r => `
+      <td><input type="text" class="cs-scene-num" value="${esc(r.num||'')}"></td>
+      <td><select class="cs-scene-io">${opt('内',r.io)}${opt('外',r.io)}${opt('内外',r.io)}</select></td>
+      <td><select class="cs-scene-dn">${opt('日',r.dn)}${opt('夜',r.dn)}${opt('日夜',r.dn)}</select></td>
+      <td><input type="text" class="cs-scene-pages" value="${esc(r.pages||'')}"></td>
+      <td><input type="text" class="cs-scene-desc" value="${esc(r.desc||'')}"></td>
+      <td><input type="text" class="cs-scene-lead" value="${esc(r.lead||'')}"></td>
+      <td><input type="text" class="cs-scene-extras" value="${esc(r.extras||'')}" style="width:50px;"></td>
+      <td><input type="text" class="cs-scene-loc" value="${esc(r.loc||'')}"></td>
+      <td><button class="btn-icon btn-del" onclick="removeSceneRow(this)">✕</button></td>`);
+    // 演员
+    if (d.cast && d.cast.length) restoreTable('cs-cast-tbody', d.cast, c => `
+      <td><input type="text" class="cast-role" value="${esc(c.role||'')}"></td>
+      <td><input type="text" class="cast-actor" value="${esc(c.actor||'')}"></td>
+      <td><input type="time" class="cast-makeup" value="${c.makeup||'05:30'}"></td>
+      <td><input type="time" class="cast-arrive" value="${c.arrive||'06:30'}"></td>
+      <td><input type="text" class="cast-scenes" value="${esc(c.scenes||'')}"></td>
+      <td><input type="text" class="cast-note" value="${esc(c.note||'')}"></td>
+      <td><button class="btn-icon btn-del" onclick="removeCastRow(this)">✕</button></td>`);
+    // 车辆
+    if (d.vehicles && d.vehicles.length) restoreTable('cs-vehicle-tbody', d.vehicles, v => `
+      <td><input type="text" class="v-plate" value="${esc(v.plate||'')}"></td>
+      <td><input type="text" class="v-driver" value="${esc(v.driver||'')}"></td>
+      <td><input type="text" class="v-phone" value="${esc(v.phone||'')}"></td>
+      <td><input type="text" class="v-riders" value="${esc(v.riders||'')}"></td>
+      <td><button class="btn-icon btn-del" onclick="removeVehicleRow(this)">✕</button></td>`);
+    // 工作人员
+    if (d.depts) d.depts.forEach(dd => setVal('cs-dept-'+dd.key, dd.val));
+    // 注意事项
+    if (d.notes) {
+      setVal('cs-note-safety',d.notes.safety);
+      setVal('cs-note-weather',d.notes.weather);
+      setVal('cs-note-special',d.notes.special);
     }
   } catch(e) {}
 }
 
-function esc(s) { return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+// --- 辅助函数 ---
+function val(id) { return document.getElementById(id)?.value || ''; }
+function setVal(id, v) { const el = document.getElementById(id); if (el && v) el.value = v; }
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function opt(val, cur) { return `<option value="${val}" ${val===cur?'selected':''}>${val}</option>`; }
+function restoreTable(tbodyId, data, rowFn) {
+  const tbody = document.getElementById(tbodyId);
+  tbody.innerHTML = data.map(r => `<tr>${rowFn(r)}</tr>`).join('');
+}
 
 // ============================================
 // 拍摄大计划

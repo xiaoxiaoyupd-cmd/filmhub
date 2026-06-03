@@ -55,7 +55,9 @@
       <div class="cs-layout">
         <!-- 表单区 -->
         <div class="cs-form card">
-          <h3 class="form-section-title">📌 基本信息</h3>
+
+          <!-- ====== 板块1: 项目信息 ====== -->
+          <h3 class="form-section-title">📌 项目信息</h3>
           <div class="form-row">
             <div class="form-group flex-2">
               <label>项目名称</label>
@@ -66,81 +68,156 @@
               <input type="date" id="cs-date">
             </div>
             <div class="form-group">
-              <label>拍摄第几天</label>
+              <label>第几拍摄天</label>
               <input type="text" id="cs-day" placeholder="例：第3天/共7天">
             </div>
           </div>
           <div class="form-row">
             <div class="form-group">
-              <label>集合时间</label>
-              <input type="time" id="cs-calltime" value="07:00">
+              <label>制片主任</label>
+              <input type="text" id="cs-producer" placeholder="姓名">
             </div>
             <div class="form-group">
-              <label>日出/日落</label>
-              <input type="text" id="cs-sun" placeholder="例：日出05:30 / 日落18:45">
+              <label>副导演</label>
+              <input type="text" id="cs-assistant" placeholder="姓名">
             </div>
             <div class="form-group">
               <label>天气</label>
               <input type="text" id="cs-weather" placeholder="例：晴 22°C">
             </div>
+            <div class="form-group">
+              <label>日出 / 日落</label>
+              <input type="text" id="cs-sun" placeholder="例：05:30 / 18:45">
+            </div>
           </div>
+
+          <!-- ====== 板块2: 拍摄地点 ====== -->
+          <h3 class="form-section-title">📍 拍摄地点</h3>
           <div class="form-row">
-            <div class="form-group flex-3">
-              <label>拍摄地点</label>
+            <div class="form-group flex-2">
+              <label>主拍摄地点</label>
               <input type="text" id="cs-location" placeholder="例：北京市朝阳区XX创意园区B座3层">
             </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group flex-3">
+            <div class="form-group">
               <label>停车/交通备注</label>
-              <input type="text" id="cs-parking" placeholder="例：园区内有停车场，地铁14号线XX站B口出">
+              <input type="text" id="cs-parking" placeholder="停车场、地铁站">
             </div>
           </div>
 
-          <h3 class="form-section-title">🎬 拍摄内容</h3>
-          <div class="form-row">
-            <div class="form-group flex-3">
-              <label>拍摄场次（场景号+内容简述）</label>
-              <textarea id="cs-scenes" rows="3" placeholder="例：
-场1 - 卧室对话（内景）
-场3 - 街道追逐（外景）
-场5 - 咖啡厅相遇（内景）"></textarea>
-            </div>
+          <!-- ====== 板块3: 时间轴 ====== -->
+          <h3 class="form-section-title">⏱️ 时间轴</h3>
+          <div class="timeline-grid">
+            <div class="tl-item"><label>集合时间</label><input type="time" id="cs-t-call" value="07:00"></div>
+            <div class="tl-item"><label>早餐</label><input type="time" id="cs-t-breakfast" value="07:30"></div>
+            <div class="tl-item"><label>出发</label><input type="time" id="cs-t-depart" value="08:00"></div>
+            <div class="tl-item"><label>开机</label><input type="time" id="cs-t-start" value="08:30"></div>
+            <div class="tl-item"><label>午餐</label><input type="time" id="cs-t-lunch" value="12:00"></div>
+            <div class="tl-item"><label>转场</label><input type="time" id="cs-t-transfer"></div>
+            <div class="tl-item"><label>收工</label><input type="time" id="cs-t-wrap" value="20:00"></div>
           </div>
 
+          <!-- ====== 板块4: 场次安排（表格） ====== -->
+          <h3 class="form-section-title">🎬 场次安排</h3>
+          <div class="table-wrap">
+            <table class="cs-table" id="cs-scene-table">
+              <thead>
+                <tr>
+                  <th>场号</th><th>内外景</th><th>日夜戏</th><th>页数</th>
+                  <th>拍摄内容</th><th>主演</th><th>群演</th><th>地点</th><th></th>
+                </tr>
+              </thead>
+              <tbody id="cs-scene-tbody">
+                <tr>
+                  <td><input type="text" class="cs-scene-num" placeholder="1"></td>
+                  <td><select class="cs-scene-io"><option>内</option><option>外</option><option>内外</option></select></td>
+                  <td><select class="cs-scene-dn"><option>日</option><option>夜</option><option>日夜</option></select></td>
+                  <td><input type="text" class="cs-scene-pages" placeholder="2页"></td>
+                  <td><input type="text" class="cs-scene-desc" placeholder="拍摄内容简述"></td>
+                  <td><input type="text" class="cs-scene-lead" placeholder="主演名"></td>
+                  <td><input type="text" class="cs-scene-extras" placeholder="数量" style="width:50px;"></td>
+                  <td><input type="text" class="cs-scene-loc" placeholder="拍摄地点"></td>
+                  <td><button class="btn-icon btn-del" onclick="removeSceneRow(this)" title="删除">✕</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="addSceneRow()" style="margin-top:8px;">+ 添加场次</button>
+
+          <!-- ====== 板块5: 演员通告 ====== -->
           <h3 class="form-section-title">🎭 演员通告</h3>
-          <div id="cs-cast-list">
-            <div class="cast-row">
-              <input type="text" class="cast-role" placeholder="角色">
-              <input type="text" class="cast-actor" placeholder="演员名">
-              <input type="text" class="cast-call" placeholder="化妆/到场时间">
-              <input type="text" class="cast-scene" placeholder="拍摄场次">
-              <input type="text" class="cast-remark" placeholder="备注">
-              <button class="btn-icon btn-del" onclick="removeCastRow(this)" title="删除">✕</button>
-            </div>
+          <div class="table-wrap">
+            <table class="cs-table" id="cs-cast-table">
+              <thead>
+                <tr>
+                  <th>角色</th><th>演员姓名</th><th>化妆时间</th><th>到场时间</th><th>拍摄场次</th><th>备注</th><th></th>
+                </tr>
+              </thead>
+              <tbody id="cs-cast-tbody">
+                <tr>
+                  <td><input type="text" class="cast-role" placeholder="角色名"></td>
+                  <td><input type="text" class="cast-actor" placeholder="演员名"></td>
+                  <td><input type="time" class="cast-makeup" value="05:30"></td>
+                  <td><input type="time" class="cast-arrive" value="06:30"></td>
+                  <td><input type="text" class="cast-scenes" placeholder="场1,场3"></td>
+                  <td><input type="text" class="cast-note" placeholder="备注"></td>
+                  <td><button class="btn-icon btn-del" onclick="removeCastRow(this)" title="删除">✕</button></td>
+                </tr>
+              </tbody>
+            </table>
           </div>
           <button class="btn btn-outline btn-sm" onclick="addCastRow()" style="margin-top:8px;">+ 添加演员</button>
 
+          <!-- ====== 板块6: 工作人员（按部门） ====== -->
           <h3 class="form-section-title">👥 工作人员</h3>
-          <div class="form-row">
-            <div class="form-group flex-3">
-              <label>各部门到场人员及时间</label>
-              <textarea id="cs-crew" rows="3" placeholder="例：
-导演组：张三 06:30
-摄影组：李四、王五 06:30（携带A7S3两套）
-灯光组：赵六 06:00（提前布光）
-录音组：钱七 06:45
-美术组：孙八 06:30（携带道具箱）
-化妆组：周九 05:30
-场务组：吴十 06:00"></textarea>
-            </div>
+          <div class="crew-grid">
+            <div class="form-group"><label>导演组</label><input type="text" id="cs-dept-director" placeholder="人员及到场时间"></div>
+            <div class="form-group"><label>制片组</label><input type="text" id="cs-dept-producer" placeholder="人员及到场时间"></div>
+            <div class="form-group"><label>摄影组</label><input type="text" id="cs-dept-camera" placeholder="人员、设备、到场时间"></div>
+            <div class="form-group"><label>美术组</label><input type="text" id="cs-dept-art" placeholder="人员及到场时间"></div>
+            <div class="form-group"><label>灯光组</label><input type="text" id="cs-dept-light" placeholder="人员及到场时间"></div>
+            <div class="form-group"><label>录音组</label><input type="text" id="cs-dept-sound" placeholder="人员及到场时间"></div>
+            <div class="form-group"><label>化妆组</label><input type="text" id="cs-dept-makeup" placeholder="人员及到场时间"></div>
+            <div class="form-group"><label>场务组</label><input type="text" id="cs-dept-grip" placeholder="人员及到场时间"></div>
           </div>
 
-          <h3 class="form-section-title">📝 备注</h3>
+          <!-- ====== 板块7: 车辆安排 ====== -->
+          <h3 class="form-section-title">🚗 车辆安排</h3>
+          <div class="table-wrap">
+            <table class="cs-table" id="cs-vehicle-table">
+              <thead>
+                <tr><th>车牌号</th><th>司机</th><th>联系电话</th><th>乘车人员</th><th></th></tr>
+              </thead>
+              <tbody id="cs-vehicle-tbody">
+                <tr>
+                  <td><input type="text" class="v-plate" placeholder="京A12345"></td>
+                  <td><input type="text" class="v-driver" placeholder="司机名"></td>
+                  <td><input type="text" class="v-phone" placeholder="138xxxx"></td>
+                  <td><input type="text" class="v-riders" placeholder="张三、李四"></td>
+                  <td><button class="btn-icon btn-del" onclick="removeVehicleRow(this)" title="删除">✕</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="addVehicleRow()" style="margin-top:8px;">+ 添加车辆</button>
+
+          <!-- ====== 板块8: 注意事项 ====== -->
+          <h3 class="form-section-title">📝 注意事项</h3>
           <div class="form-row">
-            <div class="form-group flex-3">
-              <label>特殊注意事项</label>
-              <textarea id="cs-notes" rows="2" placeholder="例：今日需拍完所有内景戏；午饭后转场至公园拍外景；记得带反光板和遮光布"></textarea>
+            <div class="form-group">
+              <label>安全提示</label>
+              <textarea id="cs-note-safety" rows="2" placeholder="例：外景拍摄注意防晒、防暑；拍摄车辆追逐戏注意安全距离"></textarea>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>天气提示</label>
+              <textarea id="cs-note-weather" rows="2" placeholder="例：下午可能有阵雨，请携带雨具和防水布遮盖设备"></textarea>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>特殊通知</label>
+              <textarea id="cs-note-special" rows="2" placeholder="例：明日休整一天，后天继续拍摄场8-10"></textarea>
             </div>
           </div>
 
