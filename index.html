@@ -21,7 +21,7 @@
         <span class="sb-icon">📋</span> 通告单
       </div>
       <div class="sb-item" data-tool="schedule" onclick="switchTool('schedule')">
-        <span class="sb-icon">📊</span> 大计划
+        <span class="sb-icon">📖</span> 剧本分解
       </div>
       <div class="sb-divider">即将上线</div>
       <div class="sb-item disabled">
@@ -246,50 +246,67 @@
     <!-- ========== 工具2: 拍摄大计划 ========== -->
     <section class="tool" id="tool-schedule">
       <div class="tool-header">
-        <h1>📊 拍摄大计划</h1>
-        <p class="tool-desc">可视化管理拍摄日程，拖拽排序，甘特图视图</p>
+        <h1>📖 剧本分解 & 顺场表</h1>
+        <p class="tool-desc">粘贴剧本 → AI智能提取场次 → 分配拍摄日 → 一键生成大计划</p>
       </div>
 
-      <div class="sch-layout">
-        <!-- 场景列表 -->
-        <div class="card sch-form">
-          <div class="sch-form-header">
-            <h3>拍摄日程表</h3>
-            <button class="btn btn-primary btn-sm" onclick="addScheduleRow()">+ 添加场次</button>
+      <!-- 剧本输入区 -->
+      <div class="card script-input-card">
+        <div class="si-header">
+          <h3>📝 剧本输入</h3>
+          <span class="si-hint">支持标准中文剧本格式：场号/场景/内外/日夜/角色对白</span>
+        </div>
+        <textarea id="script-input" class="script-textarea" placeholder="粘贴剧本内容...&#10;&#10;示例格式：&#10;&#10;第1场  张三卧室  日内&#10;张三坐在床边，神情恍惚。&#10;张三：我该怎么办...&#10;&#10;第2场  公司会议室  日内&#10;李四推门进来，手里拿着一份文件。&#10;李四：方案通过了！&#10;张三（惊喜）：真的？！" rows="8"></textarea>
+        <div class="si-actions">
+          <button class="btn btn-primary btn-lg" onclick="analyzeScript()">🤖 AI分析剧本</button>
+          <button class="btn btn-ghost btn-lg" onclick="loadSampleScript()">📋 加载示例剧本</button>
+          <span class="si-status" id="script-status"></span>
+        </div>
+      </div>
+
+      <!-- AI建议卡片 -->
+      <div class="ai-suggest-card card" id="ai-suggest" style="display:none;">
+        <div class="suggest-content" id="suggest-content"></div>
+        <div class="suggest-actions">
+          <button class="btn btn-outline btn-sm" onclick="autoAssignDays()">🪄 自动分配拍摄日</button>
+          <button class="btn btn-primary btn-sm" id="btn-today" onclick="assignToday()">📅 拍今天</button>
+        </div>
+      </div>
+
+      <!-- 双栏：场次列表 + 拍摄日分配 -->
+      <div class="bd-layout" id="bd-layout" style="display:none;">
+        <!-- 左栏：场次列表 -->
+        <div class="card bd-scenes">
+          <div class="bd-header">
+            <h3>🎬 场次列表 <span id="scene-count">0场</span></h3>
+            <button class="btn btn-outline btn-sm" onclick="addManualScene()">+ 手动添加</button>
           </div>
-          <div class="sch-table-wrap">
-            <table class="sch-table" id="sch-table">
-              <thead>
-                <tr>
-                  <th style="width:40px;">#</th>
-                  <th style="width:100px;">日期</th>
-                  <th>场景/内容</th>
-                  <th style="width:100px;">地点</th>
-                  <th style="width:60px;">内外</th>
-                  <th style="width:100px;">演员</th>
-                  <th style="width:80px;">备注</th>
-                  <th style="width:40px;"></th>
-                </tr>
-              </thead>
-              <tbody id="sch-tbody"></tbody>
+          <div class="table-wrap">
+            <table class="cs-table" id="bd-scene-table">
+              <thead><tr>
+                <th style="width:40px;">场号</th><th>主场景</th><th style="width:50px;">内/外</th>
+                <th style="width:50px;">日/夜</th><th>内容梗概</th><th style="width:50px;">页数</th>
+                <th>主要角色</th><th style="width:40px;"></th>
+              </tr></thead>
+              <tbody id="bd-scene-tbody"></tbody>
             </table>
-          </div>
-          <div class="sch-actions">
-            <button class="btn btn-outline" onclick="exportSchedule()">🖨️ 打印导出</button>
-            <button class="btn btn-ghost" onclick="saveSchedule()">💾 保存</button>
           </div>
         </div>
 
-        <!-- 甘特图预览 -->
-        <div class="card sch-gantt" id="sch-gantt-container">
-          <div class="sch-gantt-header">
-            <h3>📊 日程甘特图</h3>
+        <!-- 右栏：拍摄日 -->
+        <div class="card bd-days" id="bd-days-card">
+          <div class="bd-header">
+            <h3>📅 拍摄日安排</h3>
+            <button class="btn btn-outline btn-sm" onclick="addShootingDay()">+ 添加拍摄日</button>
           </div>
-          <div class="gantt-chart" id="gantt-chart">
-            <div class="gantt-empty" id="gantt-empty">
-              <div class="empty-icon">📊</div>
-              <p>添加场次后自动生成甘特图</p>
+          <div id="bd-days-list">
+            <div class="bd-empty" id="bd-days-empty">
+              <p>👆 从左侧点击场次分配到拍摄日</p>
             </div>
+          </div>
+          <div class="bd-days-actions" id="bd-days-actions" style="display:none;">
+            <button class="btn btn-primary" onclick="exportBreakdown()">📊 导出顺场表</button>
+            <button class="btn btn-ghost" onclick="saveBreakdown()">💾 保存</button>
           </div>
         </div>
       </div>

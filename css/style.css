@@ -468,116 +468,164 @@ body {
 }
 
 /* ============================================
-   拍摄大计划
+   剧本分解 & 顺场表
    ============================================ */
-.sch-layout { display: flex; flex-direction: column; gap: 24px; }
 
-.sch-form-header {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 14px;
+/* 剧本输入 */
+.script-input-card { margin-bottom: 16px; }
+.si-header {
+  display: flex; align-items: baseline; gap: 12px;
+  margin-bottom: 10px;
 }
-.sch-form-header h3 { font-size: 1rem; font-weight: 700; }
-
-.sch-table-wrap { overflow-x: auto; }
-.sch-table {
+.si-header h3 { font-size: 0.95rem; font-weight: 700; }
+.si-hint { font-size: 0.72rem; color: var(--text3); }
+.script-textarea {
   width: 100%;
-  border-collapse: collapse;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: 'SF Mono','Cascadia Code','Consolas',var(--font);
   font-size: 0.82rem;
-}
-.sch-table thead th {
-  padding: 10px 8px;
-  text-align: left;
-  font-weight: 700;
-  font-size: 0.7rem;
-  color: var(--text2);
-  letter-spacing: 0.5px;
-  border-bottom: 1px solid var(--border);
-  white-space: nowrap;
-}
-.sch-table tbody td {
-  padding: 8px;
-  border-bottom: 1px solid var(--border);
-  vertical-align: middle;
-}
-.sch-table tbody tr:hover { background: #F9F9FC; }
-.sch-table input {
-  width: 100%;
-  padding: 6px 8px;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  font-family: var(--font);
-  font-size: 0.8rem;
+  line-height: 1.7;
   color: var(--text);
+  background: #FAFBFC;
+  resize: vertical;
   outline: none;
-  background: transparent;
+  transition: all 0.15s;
+}
+.script-textarea:focus { border-color: var(--primary); background: var(--white); }
+.si-actions {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 12px;
+}
+.si-status { font-size: 0.8rem; color: var(--primary); font-weight: 600; }
+
+/* AI建议卡片 */
+.ai-suggest-card {
+  background: linear-gradient(135deg, #F0F4FF, #F8FAFF);
+  border: 1px solid #D0DAF0;
+  margin-bottom: 16px;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 12px;
+}
+.suggest-content { font-size: 0.84rem; color: var(--text); }
+.suggest-icon { font-size: 1.2rem; }
+.suggest-actions { display: flex; gap: 8px; }
+
+/* 双栏布局 */
+.bd-layout {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+.bd-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px;
+}
+.bd-header h3 { font-size: 0.95rem; font-weight: 700; }
+
+/* 场次表格 */
+.bd-scenes {  }
+#scene-count { font-size: 0.75rem; color: var(--text3); font-weight: 500; margin-left: 6px; }
+
+.scene-num {
+  font-weight: 700;
+  min-width: 24px; text-align: center;
+  display: inline-block;
+  background: #F0F0F3;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 0.73rem;
+}
+.bd-scenes .cs-table tbody tr {
+  cursor: pointer;
   transition: all 0.12s;
 }
-.sch-table input:hover { border-color: var(--border); }
-.sch-table input:focus { border-color: var(--primary); background: var(--white); }
-.sch-table select {
-  width: 100%;
-  padding: 6px 8px;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  font-family: var(--font);
-  font-size: 0.78rem;
-  color: var(--text);
-  outline: none;
-  background: transparent;
-  cursor: pointer;
-}
-.sch-table select:focus { border-color: var(--primary); }
+.bd-scenes .cs-table tbody tr:hover { background: #F0F4FF; }
+.bd-scenes .cs-table tbody tr.assigned { background: #F0FFF4; }
+.bd-scenes .cs-table tbody tr.assigned:hover { background: #E5FFEB; }
 
-.sch-actions {
-  display: flex; gap: 10px;
-  margin-top: 16px;
-  padding-top: 14px;
+.tag-io {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 0.65rem; font-weight: 700;
+}
+.tag-io.in { background: #E8F0FE; color: #3370FF; }
+.tag-io.out { background: #FFF3E0; color: #F5A623; }
+.tag-dn {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 0.65rem; font-weight: 700;
+}
+.tag-dn.day { background: #FFFDE7; color: #8D6E00; }
+.tag-dn.night { background: #EDE7F6; color: #5E35B1; }
+
+.td-summary {
+  max-width: 120px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: 0.73rem;
+}
+
+/* 拍摄日面板 */
+.bd-days { }
+.bd-empty {
+  text-align: center; padding: 40px 20px;
+  color: var(--text3); font-size: 0.85rem;
+}
+
+.day-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.day-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px;
+  background: #F9F9FB;
+  border-bottom: 1px solid var(--border);
+}
+.day-label { font-weight: 700; font-size: 0.82rem; }
+.day-stats { font-size: 0.72rem; color: var(--text2); margin-left: auto; margin-right: 4px; }
+.day-scenes { padding: 8px 10px; min-height: 40px; display: flex; flex-wrap: wrap; gap: 5px; }
+.day-empty-hint { font-size: 0.73rem; color: var(--text3); padding: 8px; }
+
+.day-scene-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 8px;
+  background: #E8F5E9;
+  border: 1px solid #C8E6C9;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.7rem;
+  transition: all 0.12s;
+  user-select: none;
+}
+.day-scene-chip:hover { background: #FFECEC; border-color: #FFCDD2; }
+.chip-num { font-weight: 700; }
+.chip-loc { }
+.chip-io {
+  font-size: 0.62rem; font-weight: 700;
+  padding: 0 3px; border-radius: 2px;
+}
+.chip-io.in { background: #E3F2FD; color: #1565C0; }
+.chip-io.out { background: #FFF3E0; color: #E65100; }
+.chip-pages { font-size: 0.62rem; color: var(--text2); }
+
+.bd-days-actions {
+  display: flex; gap: 8px;
+  margin-top: 14px; padding-top: 12px;
   border-top: 1px solid var(--border);
 }
 
-/* 甘特图 */
-.sch-gantt { min-height: 300px; }
-.sch-gantt-header h3 { font-size: 1rem; font-weight: 700; }
-
-.gantt-chart { margin-top: 16px; }
-.gantt-empty { text-align: center; padding: 50px; color: var(--text3); }
-.gantt-empty .empty-icon { font-size: 2.8rem; margin-bottom: 10px; }
-
-.gantt-row {
-  display: flex; align-items: center;
-  margin-bottom: 5px;
-  gap: 10px;
+/* 响应式 */
+@media (max-width: 900px) {
+  .bd-layout { grid-template-columns: 1fr; }
 }
-.gantt-label {
-  width: 160px; flex-shrink: 0;
-  font-size: 0.76rem; font-weight: 600;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.gantt-bar-wrap {
-  flex: 1;
-  height: 26px;
-  background: #F0F0F3;
-  border-radius: 5px;
-  position: relative;
-  overflow: hidden;
-}
-.gantt-bar {
-  height: 100%;
-  border-radius: 5px;
-  display: flex; align-items: center;
-  padding-left: 8px;
-  font-size: 0.63rem; font-weight: 700;
-  color: #FFF;
-  min-width: fit-content;
-  white-space: nowrap;
-}
-.gantt-bar.color-0 { background: #3370FF; }
-.gantt-bar.color-1 { background: #F5A623; }
-.gantt-bar.color-2 { background: #2BA471; }
-.gantt-bar.color-3 { background: #8B5CF6; }
-.gantt-bar.color-4 { background: #F54A45; }
-.gantt-bar.color-5 { background: #3CC7F6; }
-.gantt-bar.color-6 { background: #F7D02C; color: #1D1D1F; }
 
 /* ============================================
    Toast

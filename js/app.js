@@ -15,7 +15,7 @@ function switchTool(tool) {
   document.querySelectorAll('.tool').forEach(el => el.classList.remove('active'));
   document.getElementById('tool-' + tool).classList.add('active');
 
-  if (tool === 'schedule') renderScheduleTable();
+  if (tool === 'schedule') loadBreakdownData();
   if (tool === 'callsheet') loadCallSheetDraft();
 }
 
@@ -439,155 +439,458 @@ function restoreTable(tbodyId, data, rowFn) {
 }
 
 // ============================================
-// 拍摄大计划
+// 剧本分解 & 顺场表
 // ============================================
+let AppBreakdown = { scenes: [], days: [] };
 
-function addScheduleRow(date, scene, location, io, cast, remark) {
-  const rows = AppState.schedule;
-  rows.push({
-    id: Date.now(),
-    date: date || '',
-    scene: scene || '',
-    location: location || '',
-    io: io || '内',
-    cast: cast || '',
-    remark: remark || ''
-  });
-  saveScheduleData();
-  renderScheduleTable();
+// --- 示例剧本 ---
+const SAMPLE_SCRIPT = `第1场  张三的卧室  日内
+阳光透过窗帘洒进来，张三躺在床上盯着天花板发呆。手机响了。
+张三（接电话）：喂...
+李四（电话里）：还没起？今天的会议你忘了？
+张三猛地坐起来。
+张三：几点了？！我马上到！
+
+第2场  公司会议室  日内
+十几个人围坐在会议桌前，气氛凝重。
+王总：这个方案客户不满意，全部重做。
+张三低着头不敢说话。李四在旁边悄悄推了推他。
+李四（小声）：别慌，我有备份方案。
+
+第3场  公司茶水间  日内
+张三和李四在冲咖啡。
+张三：多亏了你，不然我就完了。
+李四：咱们是搭档嘛。
+赵五走进来，看了看两人。
+赵五：听说你们那个项目要延期？
+
+第4场  张三的卧室  夜内
+张三坐在电脑前加班改方案。窗外下起了雨。
+手机屏幕亮起，是妈妈发来的消息："生日快乐"
+张三看了一眼，眼眶微红，继续低头工作。
+
+第5场  公司天台  日外
+张三站在天台上吹风。李四上来找他。
+李四：就知道你在这儿。
+张三：有时候不知道这么拼是为了什么。
+李四：为了有一天能不这么拼吧。
+两人沉默地看着远处的城市天际线。`;
+
+function loadSampleScript() {
+  document.getElementById('script-input').value = SAMPLE_SCRIPT;
+  showToast('示例剧本已加载 📋');
 }
 
-function removeScheduleRow(id) {
-  AppState.schedule = AppState.schedule.filter(r => r.id !== id);
-  saveScheduleData();
-  renderScheduleTable();
+// --- AI剧本解析 ---
+function analyzeScript() {
+  const text = document.getElementById('script-input').value.trim();
+  if (!text) { showToast('请先粘贴剧本内容 📝'); return; }
+
+  document.getElementById('script-status').textContent = '🤖 分析中...';
+
+  setTimeout(() => {
+    const scenes = parseScript(text);
+    AppBreakdown.scenes = scenes;
+    AppBreakdown.days = loadStoredDays() || [];
+    document.getElementById('script-status').textContent = '✅ 共识别 ' + scenes.length + ' 场';
+    document.getElementById('bd-layout').style.display = 'grid';
+    document.getElementById('ai-suggest').style.display = 'block';
+
+    updateSuggestCard();
+    renderSceneTable();
+    renderDayPanels();
+    saveBreakdownData();
+  }, 300);
 }
 
-function updateScheduleCell(id, field, value) {
-  const row = AppState.schedule.find(r => r.id === id);
-  if (row) {
-    row[field] = value;
-    saveScheduleData();
-    renderGantt();
-  }
-}
+function parseScript(text) {
+  const scenes = [];
+  // 按"第X场"分割
+  const parts = text.split(/第\s*(\d+)\s*场/);
+  // parts[0] = before first scene, parts[1] = num1, parts[2] = content1, parts[3] = num2...
+  for (let i = 1; i < parts.length; i += 2) {
+    const num = parts[i];
+    const content = (parts[i+1] || '').trim();
+    if (!content) continue;
 
-function saveScheduleData() {
-  localStorage.setItem('fh_schedule', JSON.stringify(AppState.schedule));
-}
+    const lines = content.split(/\n/).map(l => l.trim()).filter(Boolean);
 
-function loadScheduleData() {
-  try {
-    const raw = localStorage.getItem('fh_schedule');
-    AppState.schedule = raw ? JSON.parse(raw) : [];
-  } catch(e) { AppState.schedule = []; }
-}
+    // 第一行通常是场景描述：主场景 次场景 日内/夜外
+    const headerLine = lines[0] || '';
+    const headerParts = headerLine.split(/\s+/);
 
-function renderScheduleTable() {
-  loadScheduleData();
-  const tbody = document.getElementById('sch-tbody');
-  if (AppState.schedule.length === 0) {
-    // 预置示例行
-    AppState.schedule = [
-      { id: 1, date:'2026-06-15', scene:'场1 卧室对话 / 场3 客厅争吵', location:'XX创意园区B座', io:'内', cast:'张三(男主)、李四(女主)', remark:'带反光板' },
-      { id: 2, date:'2026-06-16', scene:'场5 街道追逐', location:'幸福路外景', io:'外', cast:'张三(男主)、替身', remark:'封路申请已批' },
-      { id: 3, date:'2026-06-17', scene:'场2 咖啡厅 / 场7 办公室', location:'星巴克(国贸店)', io:'内', cast:'李四(女主)、王五(配角)', remark:'下午2点后可用' },
-    ];
-    saveScheduleData();
-  }
+    let mainLocation = headerParts[0] || '';
+    let subLocation = '';
+    let io = '内';
+    let dn = '日';
 
-  const colors = ['color-0','color-1','color-2','color-3','color-4','color-5','color-6'];
-  tbody.innerHTML = AppState.schedule.map((r, i) => `
-    <tr>
-      <td>${i + 1}</td>
-      <td><input type="date" value="${r.date}" onchange="updateScheduleCell(${r.id},'date',this.value)"></td>
-      <td><input type="text" value="${esc(r.scene)}" onchange="updateScheduleCell(${r.id},'scene',this.value)" placeholder="场次+内容"></td>
-      <td><input type="text" value="${esc(r.location)}" onchange="updateScheduleCell(${r.id},'location',this.value)" placeholder="拍摄地点"></td>
-      <td>
-        <select onchange="updateScheduleCell(${r.id},'io',this.value)">
-          <option value="内" ${r.io==='内'?'selected':''}>内</option>
-          <option value="外" ${r.io==='外'?'selected':''}>外</option>
-          <option value="内外" ${r.io==='内外'?'selected':''}>内外</option>
-        </select>
-      </td>
-      <td><input type="text" value="${esc(r.cast)}" onchange="updateScheduleCell(${r.id},'cast',this.value)" placeholder="所需演员"></td>
-      <td><input type="text" value="${esc(r.remark)}" onchange="updateScheduleCell(${r.id},'remark',this.value)" placeholder="备注"></td>
-      <td><button class="btn-icon btn-del" onclick="removeScheduleRow(${r.id})" title="删除">✕</button></td>
-    </tr>
-  `).join('');
-
-  renderGantt();
-}
-
-function renderGantt() {
-  const container = document.getElementById('gantt-chart');
-  const empty = document.getElementById('gantt-empty');
-
-  if (AppState.schedule.length === 0) {
-    container.innerHTML = '<div class="gantt-empty" id="gantt-empty"><div class="empty-icon">📊</div><p>添加场次后自动生成甘特图</p></div>';
-    return;
-  }
-
-  // 计算日期范围
-  const dates = AppState.schedule.map(r => r.date).filter(Boolean).sort();
-  if (dates.length === 0) {
-    container.innerHTML = '<div class="gantt-empty"><p>请先填写日期信息</p></div>';
-    return;
-  }
-
-  const minDate = new Date(dates[0]);
-  const maxDate = new Date(dates[dates.length - 1]);
-  const totalDays = Math.max(1, Math.ceil((maxDate - minDate) / (1000*60*60*24)) + 1);
-
-  const colors = ['color-0','color-1','color-2','color-3','color-4','color-5','color-6'];
-
-  container.innerHTML = AppState.schedule.map((r, i) => {
-    let left = 0, width = 100;
-    if (r.date) {
-      const d = new Date(r.date);
-      left = Math.max(0, Math.ceil((d - minDate) / (1000*60*60*24))) / totalDays * 100;
-      width = Math.max(5, 100 / totalDays);
+    // 检查是否包含内/外和日/夜标记
+    const ioDnMatch = headerLine.match(/([内外])([日夜])/);
+    if (ioDnMatch) {
+      io = ioDnMatch[1];
+      dn = ioDnMatch[2];
+      // 尝试提取场景名
+      const cleaned = headerLine.replace(/[内外][日夜]/, '').trim();
+      const cleanedParts = cleaned.split(/\s+/);
+      mainLocation = cleanedParts[0] || mainLocation;
+      subLocation = cleanedParts[1] || '';
+    } else {
+      // 尝试从整个头部提取
+      const ioMatch = headerLine.match(/[内外](?!景)/);
+      const dnMatch = headerLine.match(/[日夜](?!戏)/);
+      if (ioMatch) io = ioMatch[0];
+      if (dnMatch) dn = dnMatch[0];
     }
-    return `
-      <div class="gantt-row">
-        <div class="gantt-label" title="${esc(r.scene)}">${esc(r.scene || '未命名场次')}</div>
-        <div class="gantt-bar-wrap">
-          <div class="gantt-bar ${colors[i % colors.length]}" style="margin-left:${left}%;width:${width}%;">
-            ${r.date || ''} ${r.location ? '@'+r.location : ''}
-          </div>
-        </div>
-      </div>`;
+
+    if (headerParts.length >= 2) {
+      mainLocation = headerParts[0];
+      subLocation = headerParts[1];
+    }
+
+    // 内容梗概：取前2-3行非对话行
+    const summaryLines = [];
+    const characters = new Set();
+    const minorChars = new Set();
+    const props = new Set();
+    const costumes = new Set();
+
+    for (let j = 1; j < Math.min(lines.length, 10); j++) {
+      const line = lines[j];
+      // 跳过空行
+      if (!line) continue;
+      // 检测角色对白：中文名+冒号 或 中文名（动作）
+      const dialogMatch = line.match(/^([^\s：:]+)[：:]\s*(.+)/);
+      const actionMatch = line.match(/^([^\s：:]+)[（(]([^）)]+)[）)]/);
+      if (dialogMatch) {
+        characters.add(dialogMatch[1]);
+        if (summaryLines.length < 2) summaryLines.push('💬 ' + dialogMatch[1] + '：' + dialogMatch[2].substring(0, 20));
+      } else if (actionMatch) {
+        characters.add(actionMatch[1]);
+        if (summaryLines.length < 2) summaryLines.push('🎬 ' + line.substring(0, 30));
+      } else if (line.length > 3) {
+        if (summaryLines.length < 2) summaryLines.push(line.substring(0, 40));
+        // 道具检测
+        const propMatches = line.match(/拿着|递给|掏出|打开|桌上|包里|手中/g);
+        if (propMatches) {
+          const propMatch = line.match(/(?:拿着|递给|掏出|打开)([^，。！？\s]{1,6})/);
+          if (propMatch) props.add(propMatch[1]);
+        }
+      }
+    }
+
+    // 页数估算：按字数（中文约250字/页）
+    const charCount = content.replace(/\s/g, '').length;
+    const pages = Math.max(0.5, Math.round(charCount / 250 * 2) / 2);
+
+    // 次要角色
+    const allLines = content;
+    const minorMatch = allLines.match(/(?:走进|路过|出现|进来|出去)[^。]*(?:赵|钱|孙|周|吴|郑|王|冯|陈|褚|卫|蒋|沈|韩|杨|保安|前台|秘书|助理|司机|路人)/g);
+    if (minorMatch) {
+      minorMatch.forEach(m => {
+        const nameMatch = m.match(/([赵钱孙周吴郑王冯陈褚卫蒋沈韩杨][^\s，。]{0,3}|保安|前台|秘书|助理|司机|路人)/);
+        if (nameMatch && !characters.has(nameMatch[1])) minorChars.add(nameMatch[1]);
+      });
+    }
+
+    scenes.push({
+      id: Date.now() + parseInt(num),
+      num: num,
+      mainLocation: mainLocation,
+      subLocation: subLocation,
+      io: io,
+      dn: dn,
+      summary: summaryLines.join('；') || content.substring(0, 40),
+      pages: pages,
+      mainChars: Array.from(characters).join('、'),
+      minorChars: Array.from(minorChars).join('、'),
+      props: Array.from(props).join('、'),
+      costumes: '',
+      remark: '',
+      assignedDay: null
+    });
+  }
+  return scenes;
+}
+
+// --- AI建议 ---
+function updateSuggestCard() {
+  const n = AppBreakdown.scenes.length;
+  if (n === 0) return;
+  const totalPages = AppBreakdown.scenes.reduce((s, sc) => s + sc.pages, 0);
+  const perDay = Math.max(3, Math.min(8, Math.round(n / Math.max(1, Math.ceil(totalPages / 15)))));
+  const estDays = Math.ceil(n / perDay);
+  document.getElementById('suggest-content').innerHTML = `
+    <span class="suggest-icon">🤖</span>
+    <strong>AI 分析建议：</strong> 共 <b>${n}</b> 场戏，约 <b>${totalPages.toFixed(1)}</b> 页。
+    建议每天拍摄 <b>${perDay}±1</b> 场，约 <b>${estDays}</b> 天可完成拍摄。
+  `;
+}
+
+function autoAssignDays() {
+  const n = AppBreakdown.scenes.length;
+  if (n === 0) return;
+  const totalPages = AppBreakdown.scenes.reduce((s, sc) => s + sc.pages, 0);
+  const perDay = Math.max(3, Math.min(8, Math.round(n / Math.max(1, Math.ceil(totalPages / 15)))));
+
+  // 按场景地点分组（同地点尽量同一天）
+  const byLocation = {};
+  AppBreakdown.scenes.forEach(sc => {
+    const key = sc.mainLocation;
+    if (!byLocation[key]) byLocation[key] = [];
+    byLocation[key].push(sc);
+  });
+
+  // 分配场景到天
+  const dayScenes = [];
+  let currentDay = [];
+  let currentCount = 0;
+  let dayIndex = 1;
+
+  AppBreakdown.scenes.forEach(sc => {
+    sc.assignedDay = null;
+  });
+
+  // 简单轮询分配
+  AppBreakdown.scenes.forEach((sc, i) => {
+    if (currentCount >= perDay) {
+      dayScenes.push({ id: dayIndex, label: '第' + dayIndex + '天', sceneIds: currentDay.map(s => s.id) });
+      dayIndex++;
+      currentDay = [];
+      currentCount = 0;
+    }
+    sc.assignedDay = dayIndex;
+    currentDay.push(sc);
+    currentCount++;
+  });
+
+  // 最后一天
+  if (currentDay.length > 0) {
+    dayScenes.push({ id: dayIndex, label: '第' + dayIndex + '天', sceneIds: currentDay.map(s => s.id) });
+  }
+
+  AppBreakdown.days = dayScenes;
+  renderSceneTable();
+  renderDayPanels();
+  saveBreakdownData();
+  showToast('已自动分配 ' + AppBreakdown.days.length + ' 个拍摄日 ✅');
+}
+
+function assignToday() {
+  const today = new Date().toISOString().split('T')[0];
+  const dayLabel = '今日拍摄 (' + today + ')';
+  const existing = AppBreakdown.days.find(d => d.date === today);
+  if (existing) {
+    showToast('今日已有拍摄日：' + existing.label);
+    return;
+  }
+  const todayId = Date.now();
+  const newDay = { id: todayId, label: dayLabel, date: today, sceneIds: [] };
+  AppBreakdown.days.unshift(newDay);
+  renderDayPanels();
+  saveBreakdownData();
+  showToast('已添加今日拍摄 📅，点击左侧场次加入');
+}
+
+// --- 场次表格渲染 ---
+function renderSceneTable() {
+  const tbody = document.getElementById('bd-scene-tbody');
+  document.getElementById('scene-count').textContent = AppBreakdown.scenes.length + '场';
+
+  tbody.innerHTML = AppBreakdown.scenes.map(sc => {
+    const dayLabel = sc.assignedDay ? 'Day' + sc.assignedDay : '-';
+    return `<tr class="${sc.assignedDay ? 'assigned' : ''}" onclick="toggleSceneToToday(${sc.id})" title="点击分配/取消">
+      <td><span class="scene-num">${sc.num}</span></td>
+      <td>${esc(sc.mainLocation)}${sc.subLocation ? ' · '+esc(sc.subLocation) : ''}</td>
+      <td><span class="tag-io ${sc.io==='外'?'out':'in'}">${sc.io}</span></td>
+      <td><span class="tag-dn ${sc.dn==='夜'?'night':'day'}">${sc.dn}</span></td>
+      <td class="td-summary" title="${esc(sc.summary)}">${esc(sc.summary).substring(0,30)}</td>
+      <td>${sc.pages}页</td>
+      <td>${esc(sc.mainChars||'-')}</td>
+      <td><button class="btn-icon btn-del" onclick="event.stopPropagation();removeScene(${sc.id})">✕</button></td>
+    </tr>`;
   }).join('');
 }
 
-function exportSchedule() {
-  const win = window.open('', '_blank', 'width=900,height=700');
-  const rows = AppState.schedule.map((r, i) =>
-    `<tr><td>${i+1}</td><td>${r.date}</td><td>${esc(r.scene)}</td><td>${esc(r.location)}</td><td>${r.io}</td><td>${esc(r.cast)}</td><td>${esc(r.remark)}</td></tr>`
-  ).join('');
+function toggleSceneToToday(sceneId) {
+  if (AppBreakdown.days.length === 0) {
+    assignToday();
+    return;
+  }
+  const scene = AppBreakdown.scenes.find(s => s.id === sceneId);
+  if (!scene) return;
 
-  win.document.write(`
-    <!DOCTYPE html><html><head><meta charset="UTF-8"><title>拍摄大计划</title>
-    <style>
-      body { font-family:'PingFang SC','Microsoft YaHei',sans-serif; padding:30px; color:#1D1D1F; }
-      h2 { text-align:center; font-size:1.4rem; margin-bottom:20px; }
-      table { width:100%; border-collapse:collapse; font-size:0.82rem; }
-      th { padding:8px 10px; border-bottom:2px solid #333; text-align:left; font-weight:700; }
-      td { padding:6px 10px; border-bottom:1px solid #CCC; }
-      @media print { body { padding:0; } }
-    </style></head><body>
-    <h2>📊 拍摄大计划</h2>
-    <table><thead><tr><th>#</th><th>日期</th><th>场景/内容</th><th>地点</th><th>内外</th><th>演员</th><th>备注</th></tr></thead>
-    <tbody>${rows}</tbody></table>
-    </body></html>
-  `);
-  win.document.close();
-  setTimeout(() => win.print(), 300);
+  const todayDay = AppBreakdown.days[0]; // 第一个拍摄日 = 今天
+  if (scene.assignedDay === todayDay.id) {
+    // 取消分配
+    scene.assignedDay = null;
+    todayDay.sceneIds = todayDay.sceneIds.filter(sid => sid !== sceneId);
+  } else {
+    // 从旧天移除
+    if (scene.assignedDay) {
+      const oldDay = AppBreakdown.days.find(d => d.id === scene.assignedDay);
+      if (oldDay) oldDay.sceneIds = oldDay.sceneIds.filter(sid => sid !== sceneId);
+    }
+    scene.assignedDay = todayDay.id;
+    if (!todayDay.sceneIds.includes(sceneId)) todayDay.sceneIds.push(sceneId);
+  }
+  renderSceneTable();
+  renderDayPanels();
+  saveBreakdownData();
 }
 
-function saveSchedule() {
-  saveScheduleData();
-  showToast('大计划已保存 💾');
+function addManualScene() {
+  const scene = {
+    id: Date.now(),
+    num: AppBreakdown.scenes.length + 1,
+    mainLocation: '新场景', subLocation: '', io: '内', dn: '日',
+    summary: '手动添加', pages: 1,
+    mainChars: '', minorChars: '', props: '', costumes: '', remark: '',
+    assignedDay: null
+  };
+  AppBreakdown.scenes.push(scene);
+  renderSceneTable();
+  updateSuggestCard();
+  saveBreakdownData();
+}
+
+function removeScene(id) {
+  AppBreakdown.scenes = AppBreakdown.scenes.filter(s => s.id !== id);
+  AppBreakdown.days.forEach(d => { d.sceneIds = d.sceneIds.filter(sid => sid !== id); });
+  renderSceneTable();
+  renderDayPanels();
+  updateSuggestCard();
+  saveBreakdownData();
+}
+
+// --- 拍摄日面板 ---
+function renderDayPanels() {
+  const container = document.getElementById('bd-days-list');
+  const empty = document.getElementById('bd-days-empty');
+  const actions = document.getElementById('bd-days-actions');
+
+  if (AppBreakdown.days.length === 0) {
+    container.innerHTML = '';
+    container.appendChild(empty);
+    empty.style.display = '';
+    actions.style.display = 'none';
+    return;
+  }
+
+  empty.style.display = 'none';
+  actions.style.display = 'flex';
+
+  container.innerHTML = AppBreakdown.days.map((day, di) => {
+    const scenes = day.sceneIds.map(sid => AppBreakdown.scenes.find(s => s.id === sid)).filter(Boolean);
+    return `<div class="day-panel">
+      <div class="day-header">
+        <span class="day-label">📅 ${day.label}</span>
+        <span class="day-stats">${scenes.length}场 · ${scenes.reduce((s,sc) => s + sc.pages, 0).toFixed(1)}页</span>
+        <button class="btn-icon btn-del" onclick="removeDay(${day.id})">✕</button>
+      </div>
+      <div class="day-scenes">
+        ${scenes.length === 0 ? '<span class="day-empty-hint">点击左侧场次加入此日</span>' : ''}
+        ${scenes.map(sc => `
+          <div class="day-scene-chip" onclick="unassignScene(${sc.id}, ${day.id})" title="点击移除">
+            <span class="chip-num">${sc.num}</span>
+            <span class="chip-loc">${esc(sc.mainLocation)}</span>
+            <span class="chip-io ${sc.io==='外'?'out':'in'}">${sc.io}${sc.dn}</span>
+            <span class="chip-pages">${sc.pages}页</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function addShootingDay() {
+  const dayNum = AppBreakdown.days.length + 1;
+  AppBreakdown.days.push({ id: Date.now(), label: '第' + dayNum + '天', date: '', sceneIds: [] });
+  renderDayPanels();
+  saveBreakdownData();
+}
+
+function removeDay(dayId) {
+  AppBreakdown.days = AppBreakdown.days.filter(d => d.id !== dayId);
+  AppBreakdown.scenes.forEach(sc => { if (sc.assignedDay === dayId) sc.assignedDay = null; });
+  renderSceneTable();
+  renderDayPanels();
+  saveBreakdownData();
+}
+
+function unassignScene(sceneId, dayId) {
+  const scene = AppBreakdown.scenes.find(s => s.id === sceneId);
+  if (scene) scene.assignedDay = null;
+  const day = AppBreakdown.days.find(d => d.id === dayId);
+  if (day) day.sceneIds = day.sceneIds.filter(sid => sid !== sceneId);
+  renderSceneTable();
+  renderDayPanels();
+  saveBreakdownData();
+}
+
+// --- 导出 ---
+function exportBreakdown() {
+  const win = window.open('', '_blank', 'width=900,height=700');
+  const rows = AppBreakdown.days.map((day, di) => {
+    const scenes = day.sceneIds.map(sid => AppBreakdown.scenes.find(s => s.id === sid)).filter(Boolean);
+    return scenes.map((sc, si) => `
+      <tr><td>${di+1}</td><td>${day.label}</td><td>${esc(sc.num)}</td><td>${esc(sc.mainLocation)}</td>
+      <td>${sc.io}</td><td>${sc.dn}</td><td>${esc(sc.summary)}</td><td>${sc.pages}页</td>
+      <td>${esc(sc.mainChars)}</td><td>${esc(sc.props)}</td><td>${esc(sc.remark)}</td></tr>
+    `).join('');
+  }).join('');
+
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>顺场表</title>
+<style>
+body{font-family:'PingFang SC','Microsoft YaHei',sans-serif;padding:20px 28px;color:#1D1D1F;}
+h2{text-align:center;font-size:1.3rem;margin-bottom:6px;}
+table{width:100%;border-collapse:collapse;font-size:0.72rem;}
+th{font-weight:700;background:#F0F0F2;padding:5px 6px;border:1px solid #CCC;text-align:left;}
+td{padding:4px 6px;border:1px solid #DDD;}
+@page{size:A4 landscape;margin:10mm;}
+@media print{body{padding:0;}}
+</style></head><body>
+<h2>📖 顺场表</h2>
+<table><thead><tr><th>天</th><th>拍摄日</th><th>场号</th><th>主场景</th><th>内外</th><th>日夜</th><th>内容</th><th>页数</th><th>主要角色</th><th>道具</th><th>备注</th></tr></thead>
+<tbody>${rows}</tbody></table>
+<script>window.onload=function(){window.print();}<\/script></body></html>`);
+  win.document.close();
+}
+
+// --- 存储 ---
+function saveBreakdownData() {
+  localStorage.setItem('fh_breakdown', JSON.stringify({
+    scenes: AppBreakdown.scenes,
+    days: AppBreakdown.days
+  }));
+}
+
+function loadStoredDays() {
+  try {
+    const raw = localStorage.getItem('fh_breakdown');
+    return raw ? JSON.parse(raw).days || [] : [];
+  } catch(e) { return []; }
+}
+
+function loadBreakdownData() {
+  try {
+    const raw = localStorage.getItem('fh_breakdown');
+    if (!raw) return;
+    const d = JSON.parse(raw);
+    AppBreakdown.scenes = d.scenes || [];
+    AppBreakdown.days = d.days || [];
+    if (AppBreakdown.scenes.length > 0) {
+      document.getElementById('bd-layout').style.display = 'grid';
+      document.getElementById('ai-suggest').style.display = 'block';
+      updateSuggestCard();
+      renderSceneTable();
+      renderDayPanels();
+    }
+  } catch(e) {}
+}
+
+function saveBreakdown() {
+  saveBreakdownData();
+  showToast('剧本分解已保存 💾');
 }
 
 // ============================================
@@ -601,8 +904,8 @@ const AppState = {
 // 初始化
 // ============================================
 function init() {
-  loadScheduleData();
   loadCallSheetDraft();
+  loadBreakdownData();
 
   // 点击侧边栏外部关闭（移动端）
   document.getElementById('app').addEventListener('click', (e) => {
