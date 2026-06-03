@@ -281,7 +281,31 @@ function generateCallSheet() {
   document.getElementById('cs-preview-container').scrollIntoView({ behavior: 'smooth' });
 }
 
-// --- 导出打印 ---
+// --- 导出PDF ---
+function exportPDF() {
+  if (document.getElementById('cs-preview-content').style.display === 'none') {
+    showToast('请先生成通告单'); return;
+  }
+  const content = document.getElementById('cs-preview-content').innerHTML;
+  const win = window.open('', '_blank', 'width=800,height=900');
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>拍摄通告单</title>
+<style>
+body{font-family:'PingFang SC','Microsoft YaHei',sans-serif;padding:20px 28px;color:#1D1D1F;max-width:700px;margin:auto;}
+h2{text-align:center;font-size:1.2rem;letter-spacing:3px;margin-bottom:2px;}
+.cs-subtitle{text-align:center;font-size:0.82rem;color:#6E6E73;margin-bottom:14px;}
+.cs-sec-title{font-size:0.78rem;font-weight:700;margin:12px 0 5px;padding:3px 8px;background:#F5F5F7;border-left:3px solid #3370FF;}
+table{width:100%;border-collapse:collapse;font-size:0.75rem;margin-bottom:6px;}
+td{padding:3px 7px;border:1px solid #DDD;vertical-align:top;}
+.td-label{font-weight:700;background:#FAFAFC;color:#6E6E73;}
+.cs-sub-table th{font-weight:700;background:#F0F0F2;font-size:0.66rem;padding:3px 5px;border:1px solid #DDD;text-align:left;}
+.cs-sub-table td{padding:3px 5px;border:1px solid #DDD;font-size:0.7rem;}
+@page{size:A4;margin:12mm;}
+@media print{body{padding:0;}}
+</style></head><body>${content}<script>window.onload=function(){window.print();}<\/script></body></html>`);
+  win.document.close();
+}
+
+// --- A4打印 ---
 function exportCallSheet() {
   if (document.getElementById('cs-preview-content').style.display === 'none') {
     showToast('请先生成通告单'); return;
@@ -290,19 +314,45 @@ function exportCallSheet() {
   const win = window.open('', '_blank', 'width=800,height=900');
   win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>拍摄通告单</title>
 <style>
-body{font-family:'PingFang SC','Microsoft YaHei',sans-serif;padding:24px 32px;color:#1D1D1F;max-width:750px;margin:auto;}
-h2{text-align:center;font-size:1.3rem;letter-spacing:3px;margin-bottom:2px;}
-.cs-subtitle{text-align:center;font-size:0.85rem;color:#6E6E73;margin-bottom:16px;}
-.cs-sec-title{font-size:0.8rem;font-weight:700;margin:14px 0 6px;padding:3px 8px;background:#F5F5F7;border-left:3px solid #0071E3;}
-table{width:100%;border-collapse:collapse;font-size:0.78rem;margin-bottom:8px;}
-td{padding:4px 8px;border:1px solid #DDD;vertical-align:top;}
-.td-label{font-weight:700;background:#FAFAFC;width:90px;color:#6E6E73;}
-.cs-sub-table th{font-weight:700;background:#F0F0F2;font-size:0.68rem;padding:3px 5px;border:1px solid #DDD;text-align:left;}
-.cs-sub-table td{padding:3px 5px;border:1px solid #DDD;font-size:0.73rem;}
-@media print{body{padding:0;}}
-</style></head><body>${content}</body></html>`);
+body{font-family:'PingFang SC','Microsoft YaHei',sans-serif;padding:16mm 12mm;color:#1D1D1F;max-width:190mm;margin:auto;}
+h2{text-align:center;font-size:14pt;letter-spacing:3px;margin-bottom:2px;}
+.cs-subtitle{text-align:center;font-size:9pt;color:#6E6E73;margin-bottom:14px;}
+.cs-sec-title{font-size:8pt;font-weight:700;margin:12px 0 5px;padding:3px 8px;background:#F0F0F2;border-left:3px solid #333;}
+table{width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:5px;}
+td{padding:3px 6px;border:1px solid #CCC;vertical-align:top;}
+.td-label{font-weight:700;background:#F8F8FA;color:#555;}
+.cs-sub-table th{font-weight:700;background:#F0F0F2;font-size:6.5pt;padding:2px 4px;border:1px solid #CCC;text-align:left;}
+.cs-sub-table td{padding:2px 4px;border:1px solid #CCC;font-size:7pt;}
+@page{size:A4;margin:10mm;}
+@media print{body{padding:0;margin:0;}}
+</style></head><body>${content}<script>window.onload=function(){window.print();}<\/script></body></html>`);
   win.document.close();
-  setTimeout(() => win.print(), 300);
+}
+
+// --- 微信分享 ---
+function shareCallSheet() {
+  if (document.getElementById('cs-preview-content').style.display === 'none') {
+    showToast('请先生成通告单'); return;
+  }
+  const project = val('cs-project') || '拍摄通告单';
+  const shareTitle = '📋 ' + project + ' - 拍摄通告单';
+  const shareText = '来自 Prodlink 的通告单';
+
+  // 优先使用 Web Share API（支持微信等）
+  if (navigator.share) {
+    navigator.share({
+      title: shareTitle,
+      text: shareText,
+    }).catch(() => {});
+  } else {
+    // 降级：复制链接提示
+    const url = window.location.href;
+    navigator.clipboard.writeText(shareTitle + '\n' + shareText + '\n' + url).then(() => {
+      showToast('已复制分享内容，可粘贴到微信 📋');
+    }).catch(() => {
+      showToast('请截图后分享到微信 📸');
+    });
+  }
 }
 
 // --- 保存/加载 ---
