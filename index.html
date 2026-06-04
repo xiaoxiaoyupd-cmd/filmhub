@@ -269,6 +269,13 @@
           <p>请逐场核对信息，修改后点击"确认全部"生成顺场表</p>
         </div>
         <div class="confirm-scenes" id="confirm-scenes"></div>
+        <!-- 确认面板内的LINK助手 -->
+        <div class="confirm-assistant">
+          <span class="confirm-as-label">💬 LINK小助手：</span>
+          <input type="text" id="confirm-as-input" placeholder="如：主角是妈妈和女儿 / 所有场加道具手机 / 第3场夜外"
+            onkeydown="if(event.key==='Enter')sendConfirmCmd()">
+          <button class="btn btn-primary btn-sm" onclick="sendConfirmCmd()">发送</button>
+        </div>
         <div class="confirm-actions">
           <button class="btn btn-primary btn-lg" onclick="confirmAllScenes()">✅ 确认全部，生成顺场表</button>
           <button class="btn btn-outline btn-lg" onclick="cancelAnalysis()">取消</button>

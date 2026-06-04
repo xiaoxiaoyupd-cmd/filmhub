@@ -159,6 +159,8 @@ function buildScene(sc) {
 function showConfirmPanel(scenes) {
   const panel = document.getElementById('confirm-panel');
   const container = document.getElementById('confirm-scenes');
+  const hist = getFieldHistory();
+
   container.innerHTML = scenes.map((sc, i) => `
     <div class="confirm-scene">
       <div class="confirm-scene-header">
@@ -169,41 +171,57 @@ function showConfirmPanel(scenes) {
         <span class="confirm-pages">${sc.pages}页</span>
       </div>
       <div class="confirm-row">
-        <label>场景</label><input value="${esc(sc.location)}" data-idx="${i}" data-field="location">
+        <label>场景</label><input value="${esc(sc.location)}" data-idx="${i}" data-field="location" list="hist-location"><datalist id="hist-location">${(hist.location||[]).map(v=>'<option value="'+esc(v)+'">').join('')}</datalist>
         <label>内/外</label><select data-idx="${i}" data-field="io"><option ${sc.io==='内'?'selected':''}>内</option><option ${sc.io==='外'?'selected':''}>外</option></select>
         <label>日/夜</label><select data-idx="${i}" data-field="dn"><option ${sc.dn==='日'?'selected':''}>日</option><option ${sc.dn==='夜'?'selected':''}>夜</option></select>
         <label>页数</label><input value="${sc.pages}" data-idx="${i}" data-field="pages" style="width:50px;">
       </div>
       <div class="confirm-row">
-        <label>内容梗概</label><input value="${esc(sc.summary)}" data-idx="${i}" data-field="summary" style="flex:1;">
+        <label>内容梗概</label><input value="${esc(sc.summary)}" data-idx="${i}" data-field="summary" style="flex:1;" list="hist-summary"><datalist id="hist-summary">${(hist.summary||[]).map(v=>'<option value="'+esc(v)+'">').join('')}</datalist>
       </div>
       <div class="confirm-row">
-        <label>主要角色</label><input value="${esc(sc.mainChars)}" data-idx="${i}" data-field="mainChars">
-        <label>次要角色</label><input value="${esc(sc.minorChars)}" data-idx="${i}" data-field="minorChars">
+        <label>主要角色</label><input value="${esc(sc.mainChars)}" data-idx="${i}" data-field="mainChars" list="hist-mainChars"><datalist id="hist-mainChars">${(hist.mainChars||[]).map(v=>'<option value="'+esc(v)+'">').join('')}</datalist>
+        <label>次要角色</label><input value="${esc(sc.minorChars)}" data-idx="${i}" data-field="minorChars" list="hist-minorChars"><datalist id="hist-minorChars">${(hist.minorChars||[]).map(v=>'<option value="'+esc(v)+'">').join('')}</datalist>
       </div>
       <div class="confirm-row">
-        <label>道具</label><input value="${esc(sc.props)}" data-idx="${i}" data-field="props">
-        <label>备注</label><input value="${esc(sc.remark)}" data-idx="${i}" data-field="remark">
+        <label>道具</label><input value="${esc(sc.props)}" data-idx="${i}" data-field="props" list="hist-props"><datalist id="hist-props">${(hist.props||[]).map(v=>'<option value="'+esc(v)+'">').join('')}</datalist>
+        <label>服装</label><input value="${esc(sc.costumes)}" data-idx="${i}" data-field="costumes" list="hist-costumes"><datalist id="hist-costumes">${(hist.costumes||[]).map(v=>'<option value="'+esc(v)+'">').join('')}</datalist>
+      </div>
+      <div class="confirm-row">
+        <label>备注</label><input value="${esc(sc.remark)}" data-idx="${i}" data-field="remark" list="hist-remark"><datalist id="hist-remark">${(hist.remark||[]).map(v=>'<option value="'+esc(v)+'">').join('')}</datalist>
       </div>
       <details class="confirm-raw"><summary>剧本原文</summary><pre>${esc(sc.rawText)}</pre></details>
     </div>
   `).join('');
+
   panel.style.display = 'block';
   panel.scrollIntoView({ behavior: 'smooth' });
+
+  // 重置快捷发送标志
+  window._confirmAsSent = false;
 }
 
 function confirmAllScenes() {
+  const hist = getFieldHistory();
   document.querySelectorAll('#confirm-scenes input, #confirm-scenes select').forEach(el => {
     const idx = parseInt(el.dataset.idx), field = el.dataset.field;
     if (!isNaN(idx) && field && AppBreakdown.scenes[idx]) {
-      AppBreakdown.scenes[idx][field] = el.tagName === 'SELECT' ? el.value : el.value;
-      if (field === 'pages') AppBreakdown.scenes[idx].pages = parseFloat(el.value) || 1;
+      const val = el.tagName === 'SELECT' ? el.value : el.value;
+      AppBreakdown.scenes[idx][field] = val;
+      if (field === 'pages') AppBreakdown.scenes[idx].pages = parseFloat(val) || 1;
+      // 存入历史
+      if (val && field !== 'pages' && !hist[field].includes(val)) {
+        hist[field].push(val);
+        if (hist[field].length > 20) hist[field].shift();
+      }
     }
   });
+  saveFieldHistory(hist);
   AppBreakdown.confirmed = true;
   document.getElementById('confirm-panel').style.display = 'none';
   document.getElementById('bd-layout').style.display = 'block';
   document.getElementById('ai-suggest').style.display = 'flex';
+  document.getElementById('assistant-bar').style.display = 'block';
   updateSuggestCard(); renderSceneTable(); renderSameLocationTable(); renderDayPanels(); saveBreakdownData();
   document.getElementById('bd-layout').scrollIntoView({ behavior: 'smooth' });
   showToast('已确认 ✅ 顺场表已生成');
@@ -353,6 +371,165 @@ function loadBreakdownData() {
   } catch(e) {}
 }
 function saveBreakdown() { saveBreakdownData(); showToast('已保存 💾'); }
+
+// ============================================
+// 输入记忆系统
+// ============================================
+function getFieldHistory() {
+  try { return JSON.parse(localStorage.getItem('fh_field_hist')) || {}; } catch(e) { return {}; }
+}
+function saveFieldHistory(hist) {
+  localStorage.setItem('fh_field_hist', JSON.stringify(hist));
+}
+
+// ============================================
+// 确认面板内 LINK 助手
+// ============================================
+function sendConfirmCmd() {
+  const input = document.getElementById('confirm-as-input');
+  const cmd = input.value.trim();
+  if (!cmd) return;
+  input.value = '';
+
+  const sc = AppBreakdown.scenes;
+  let reply = '';
+
+  // "主角是 XXX 和 YYY" / "主要角色是 XXX"
+  const mainCharMatch = cmd.match(/(?:主角|主要角色|主演)[是：:有]\s*(.+)/);
+  if (mainCharMatch) {
+    const names = mainCharMatch[1].split(/[、，,和\s]+/).filter(Boolean);
+    sc.forEach(s => {
+      if (!s.mainChars) s.mainChars = '';
+      names.forEach(n => { if (!s.mainChars.includes(n)) s.mainChars += ' ' + n; });
+      s.mainChars = s.mainChars.trim();
+    });
+    refreshConfirmInputs();
+    reply = '✅ 已将所有场次的主要角色设为：' + names.join('、');
+  }
+
+  // "配角是 XXX" / "次要角色是 XXX"
+  else if (cmd.match(/(?:配角|次要角色)[是：:有]\s*(.+)/)) {
+    const m = cmd.match(/(?:配角|次要角色)[是：:有]\s*(.+)/);
+    const names = m[1].split(/[、，,和\s]+/).filter(Boolean);
+    sc.forEach(s => {
+      if (!s.minorChars) s.minorChars = '';
+      names.forEach(n => { if (!s.minorChars.includes(n)) s.minorChars += ' ' + n; });
+      s.minorChars = s.minorChars.trim();
+    });
+    refreshConfirmInputs();
+    reply = '✅ 已将所有场次的次要角色设为：' + names.join('、');
+  }
+
+  // "第X场 XXX"
+  else if (cmd.match(/第\s*(\d+)\s*场/)) {
+    const sceneCmd = cmd.replace(/第\s*(\d+)\s*场\s*/, '');
+    const num = cmd.match(/第\s*(\d+)\s*场/)[1];
+    const scene = sc.find(s => s.num === num);
+    if (!scene) { reply = '❌ 没找到场' + num; }
+    else {
+      if (sceneCmd.includes('夜')) { scene.dn = '夜'; reply = '✅ 场' + num + ' 改为夜戏'; }
+      if (sceneCmd.includes('日')) { scene.dn = '日'; }
+      if (sceneCmd.includes('外')) { scene.io = '外'; reply = (reply||'✅') + ' 场' + num + ' 改为外景'; }
+      if (sceneCmd.includes('内')) { scene.io = '内'; }
+      const addChar = sceneCmd.match(/(?:角色|加)[：:\s]*([^\s，。]+)/);
+      if (addChar) {
+        scene.mainChars = scene.mainChars ? scene.mainChars + ' ' + addChar[1] : addChar[1];
+        reply = '✅ 场' + num + ' 添加角色：' + addChar[1];
+      }
+      const addProp = sceneCmd.match(/(?:道具|加)[：:\s]*([^\s，。]+)/);
+      if (addProp && !addChar) {
+        scene.props = scene.props ? scene.props + ' ' + addProp[1] : addProp[1];
+        reply = '✅ 场' + num + ' 添加道具：' + addProp[1];
+      }
+      const locMatch = sceneCmd.match(/(?:场景|地点)[：:\s]*([^\s，。]{2,10})/);
+      if (locMatch) { scene.location = locMatch[1]; reply = '✅ 场' + num + ' 场景改为：' + locMatch[1]; }
+      refreshConfirmInputs();
+    }
+  }
+
+  // "所有XXX改成YYY"
+  else if (cmd.match(/所有\s*"?([^\s"]+)"?\s*[改换]\s*(?:成|为)?\s*"?([^\s"]+)"?/)) {
+    const m = cmd.match(/所有\s*"?([^\s"]+)"?\s*[改换]\s*(?:成|为)?\s*"?([^\s"]+)"?/);
+    const from = m[1], to = m[2];
+    let cnt = 0;
+    sc.forEach(s => {
+      ['location','summary','mainChars','minorChars','props','costumes','remark'].forEach(f => {
+        if (s[f] && s[f].includes(from)) { s[f] = s[f].replace(new RegExp(from, 'g'), to); cnt++; }
+      });
+    });
+    refreshConfirmInputs();
+    reply = '✅ 已将 ' + cnt + ' 处 "' + from + '" 改为 "' + to + '"';
+  }
+
+  // "加道具XXX" → 全部场次
+  else if (cmd.match(/[加添]\s*道具\s*(.+)/)) {
+    const m = cmd.match(/[加添]\s*道具\s*(.+)/);
+    const prop = m[1].trim();
+    sc.forEach(s => { s.props = s.props ? s.props + ' ' + prop : prop; });
+    refreshConfirmInputs();
+    reply = '✅ 已为所有场次添加道具：' + prop;
+  }
+
+  // "加服装XXX"
+  else if (cmd.match(/[加添]\s*服装\s*(.+)/)) {
+    const m = cmd.match(/[加添]\s*服装\s*(.+)/);
+    const costume = m[1].trim();
+    sc.forEach(s => { s.costumes = s.costumes ? s.costumes + ' ' + costume : costume; });
+    refreshConfirmInputs();
+    reply = '✅ 已为所有场次添加服装：' + costume;
+  }
+
+  // "第X场服装XXX"
+  else if (cmd.match(/第\s*(\d+)\s*场\s*服装/)) {
+    const num = cmd.match(/第\s*(\d+)\s*场\s*服装\s*(.+)/);
+    if (num) {
+      const scene = sc.find(s => s.num === num[1]);
+      if (scene) {
+        scene.costumes = scene.costumes ? scene.costumes + ' ' + num[2] : num[2];
+        refreshConfirmInputs();
+        reply = '✅ 场' + num[1] + ' 服装设为：' + num[2];
+      }
+    }
+  }
+
+  // "确认" → 触发确认
+  else if (cmd.match(/^(确认|OK|ok|好了|行|没问题)$/)) {
+    saveBreakdownData();
+    confirmAllScenes();
+    return;
+  }
+
+  else {
+    reply = '🤔 试试这样说：<br>· "主角是妈妈和女儿"<br>· "第3场夜外"<br>· "加道具手机"<br>· "所有张三改成张总"<br>· "加服装旗袍"<br>· "确认"';
+  }
+
+  showConfirmToast(reply);
+  saveBreakdownData();
+}
+
+function refreshConfirmInputs() {
+  const sc = AppBreakdown.scenes;
+  document.querySelectorAll('#confirm-scenes input[data-field]').forEach(el => {
+    const idx = parseInt(el.dataset.idx), field = el.dataset.field;
+    if (!isNaN(idx) && field && sc[idx]) {
+      el.value = sc[idx][field] || '';
+    }
+  });
+}
+
+function showConfirmToast(msg) {
+  // 在确认面板底部显示反馈
+  let el = document.getElementById('confirm-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'confirm-toast';
+    el.style.cssText = 'margin-top:8px;padding:8px 14px;background:#F0F4FF;border-radius:6px;font-size:0.78rem;line-height:1.5;';
+    document.querySelector('.confirm-assistant').after(el);
+  }
+  el.innerHTML = msg;
+  el.style.display = 'block';
+  setTimeout(() => { el.style.display = 'none'; }, 4000);
+}
 
 // ============================================
 // LINK小助手
