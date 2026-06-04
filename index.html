@@ -280,10 +280,20 @@
         <!-- AI建议 -->
         <div class="ai-suggest-card card" id="ai-suggest">
           <div class="suggest-content" id="suggest-content"></div>
+          <div class="suggest-input-row">
+            <span>计划拍摄</span>
+            <input type="number" id="plan-days" value="" min="1" max="99" placeholder="自动" style="width:60px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:0.82rem;text-align:center;" onchange="onPlanDaysChange()">
+            <span>天</span>
+          </div>
           <div class="suggest-actions">
             <button class="btn btn-outline btn-sm" onclick="autoAssignDays()">🪄 自动分配</button>
             <button class="btn btn-primary btn-sm" onclick="assignToday()">📅 拍今天</button>
           </div>
+        </div>
+
+        <!-- LINK小助手按钮 -->
+        <div style="text-align:center;margin:12px 0;" id="assistant-bar" style="display:none;">
+          <button class="btn btn-primary" onclick="openAssistant()">💬 LINK小助手</button>
         </div>
 
         <!-- 顺场表 + 同场次分析表 并排 -->
@@ -326,6 +336,28 @@
     </section>
 
   </main>
+</div>
+
+<!-- LINK小助手 聊天弹窗 -->
+<div class="assistant-overlay" id="assistant-overlay" style="display:none;">
+  <div class="assistant-panel">
+    <div class="as-header">
+      <span>🤖 LINK小助手</span>
+      <button class="btn-icon" onclick="closeAssistant()">✕</button>
+    </div>
+    <div class="as-messages" id="as-messages"></div>
+    <div class="as-input-row">
+      <input type="text" id="as-input" placeholder="输入指令，如：第3场改成夜外、加道具手机..." onkeydown="if(event.key==='Enter')sendAssistantMsg()">
+      <button class="btn btn-primary btn-sm" onclick="sendAssistantMsg()">发送</button>
+    </div>
+    <div class="as-quick-actions" id="as-quick-actions">
+      <span>快捷指令：</span>
+      <button class="btn btn-ghost btn-sm" onclick="quickCmd('确认无误')">✅ 确认</button>
+      <button class="btn btn-ghost btn-sm" onclick="quickCmd('列出所有角色')">👥 角色</button>
+      <button class="btn btn-ghost btn-sm" onclick="quickCmd('列出所有道具')">🎒 道具</button>
+      <button class="btn btn-ghost btn-sm" onclick="quickCmd('重新分析')">🔄 重分析</button>
+    </div>
+  </div>
 </div>
 
 <!-- Toast -->

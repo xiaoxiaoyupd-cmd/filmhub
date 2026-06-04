@@ -353,3 +353,206 @@ function loadBreakdownData() {
   } catch(e) {}
 }
 function saveBreakdown() { saveBreakdownData(); showToast('已保存 💾'); }
+
+// ============================================
+// LINK小助手
+// ============================================
+let assistantMsgs = [];
+
+function openAssistant() {
+  document.getElementById('assistant-overlay').style.display = 'flex';
+  if (!assistantMsgs.length) initAssistant();
+  renderAssistantMsgs();
+  setTimeout(() => document.getElementById('as-input').focus(), 200);
+}
+
+function closeAssistant() { document.getElementById('assistant-overlay').style.display = 'none'; }
+
+function initAssistant() {
+  assistantMsgs = [];
+  const sc = AppBreakdown.scenes;
+  if (!sc.length) return;
+
+  // 汇总信息
+  const allChars = new Set(); const allProps = new Set(); const allLocs = new Set();
+  sc.forEach(s => {
+    (s.mainChars||'').split(/[\s、,]+/).filter(Boolean).forEach(c => allChars.add(c));
+    (s.props||'').split(/[\s、,]+/).filter(Boolean).forEach(p => allProps.add(p));
+    allLocs.add(s.location);
+  });
+
+  addAsMsg('assistant', `你好！我是 <b>LINK小助手</b> 🤖
+
+我已经分析了你的剧本，共识别 <b>${sc.length}</b> 场戏：
+${sc.map(s => `· 场${s.num} — ${s.location} | ${s.io}${s.dn} | ${s.pages}页 | 角色:${s.mainChars||'无'}`).join('<br>')}
+
+📋 <b>汇总：</b>
+· 主要角色：${Array.from(allChars).join('、') || '未检测到'}
+· 道具清单：${Array.from(allProps).join('、') || '未检测到'}
+· 场景地点：${Array.from(allLocs).join('、')}
+
+你可以用自然语言让我修改，例如：
+· "第3场改成夜外"
+· "第1场加角色赵六"
+· "所有张三改成张总"
+· "确认无误" 生成顺场表`);
+}
+
+function addAsMsg(role, text) {
+  assistantMsgs.push({ role, text, time: Date.now() });
+}
+
+function renderAssistantMsgs() {
+  const container = document.getElementById('as-messages');
+  container.innerHTML = assistantMsgs.map(m =>
+    `<div class="as-msg ${m.role}"><div class="as-bubble">${m.text}</div></div>`
+  ).join('');
+  container.scrollTop = container.scrollHeight;
+}
+
+function sendAssistantMsg() {
+  const input = document.getElementById('as-input');
+  const cmd = input.value.trim();
+  if (!cmd) return;
+  addAsMsg('user', cmd);
+  input.value = '';
+  processAssistantCmd(cmd);
+  renderAssistantMsgs();
+}
+
+function quickCmd(cmd) {
+  addAsMsg('user', cmd);
+  processAssistantCmd(cmd);
+  renderAssistantMsgs();
+}
+
+function processAssistantCmd(cmd) {
+  const sc = AppBreakdown.scenes;
+
+  // 确认
+  if (/^(确认|没问题|好了|OK|ok|可以|行)$/.test(cmd) || cmd.includes('确认无误') || cmd.includes('没问题')) {
+    AppBreakdown.confirmed = true;
+    document.getElementById('confirm-panel').style.display = 'none';
+    document.getElementById('bd-layout').style.display = 'block';
+    document.getElementById('ai-suggest').style.display = 'flex';
+    document.getElementById('assistant-bar').style.display = 'none';
+    updateSuggestCard(); renderSceneTable(); renderSameLocationTable(); renderDayPanels(); saveBreakdownData();
+    closeAssistant();
+    addAsMsg('assistant', '✅ 已确认！顺场表和同场次分析表已生成。<br>你可以在下方分配拍摄日，或随时再打开小助手修改。');
+    return;
+  }
+
+  // 重新分析
+  if (cmd.includes('重新分析')) {
+    assistantMsgs = [];
+    closeAssistant();
+    analyzeScript();
+    return;
+  }
+
+  // 列出角色
+  if (cmd.includes('角色')) {
+    const all = new Set();
+    sc.forEach(s => (s.mainChars||'').split(/[\s、,]+/).filter(Boolean).forEach(c => all.add(c)));
+    addAsMsg('assistant', '👥 <b>全部角色：</b>' + (Array.from(all).join('、') || '未检测到'));
+    return;
+  }
+
+  // 列出道具
+  if (cmd.includes('道具')) {
+    const all = new Set();
+    sc.forEach(s => (s.props||'').split(/[\s、,]+/).filter(Boolean).forEach(p => all.add(p)));
+    addAsMsg('assistant', '🎒 <b>全部道具：</b>' + (Array.from(all).join('、') || '未检测到'));
+    return;
+  }
+
+  // "第X场 改成/改为 XXX"
+  const changeMatch = cmd.match(/第\s*(\d+)\s*场?\s*[改换变]\s*(?:成|为)?\s*(.+)/);
+  if (changeMatch) {
+    const num = changeMatch[1];
+    const rest = changeMatch[2];
+    const scene = sc.find(s => s.num === num);
+    if (!scene) { addAsMsg('assistant', '❌ 没找到场' + num); return; }
+
+    // 尝试匹配各种属性
+    if (rest.includes('夜')) { scene.dn = '夜'; addAsMsg('assistant', '✅ 场' + num + ' 已改为夜戏'); }
+    if (rest.includes('日')) { scene.dn = '日'; }
+    if (rest.includes('外')) { scene.io = '外'; addAsMsg('assistant', '✅ 场' + num + ' 已改为外景'); }
+    if (rest.includes('内')) { scene.io = '内'; }
+
+    const locMatch = rest.match(/(?:场景|地点|位置)?[改换变为]?\s*"?([一-鿿a-zA-Z0-9\s]{2,10})"?\s*(?:$|[内外国日夜])/);
+    if (locMatch) { scene.location = locMatch[1].trim(); addAsMsg('assistant', '✅ 场' + num + ' 场景已更新'); }
+
+    const charMatch = rest.match(/角色[加增添]\s*([^\s，。]+)/);
+    if (charMatch) {
+      scene.mainChars = scene.mainChars ? scene.mainChars + ' ' + charMatch[1] : charMatch[1];
+      addAsMsg('assistant', '✅ 场' + num + ' 已添加角色：' + charMatch[1]);
+    }
+
+    const propMatch = rest.match(/道具[加增添]\s*([^\s，。]+)/);
+    if (propMatch) {
+      scene.props = scene.props ? scene.props + ' ' + propMatch[1] : propMatch[1];
+      addAsMsg('assistant', '✅ 场' + num + ' 已添加道具：' + propMatch[1]);
+    }
+
+    saveBreakdownData();
+    return;
+  }
+
+  // "所有 XXX 改成 YYY"
+  const allChangeMatch = cmd.match(/所有\s*"?([^\s"]+)"?\s*[改换变]\s*(?:成|为)?\s*"?([^\s"]+)"?/);
+  if (allChangeMatch) {
+    const from = allChangeMatch[1], to = allChangeMatch[2];
+    let cnt = 0;
+    sc.forEach(s => {
+      if (s.mainChars && s.mainChars.includes(from)) { s.mainChars = s.mainChars.replace(new RegExp(from, 'g'), to); cnt++; }
+      if (s.location && s.location.includes(from)) { s.location = s.location.replace(new RegExp(from, 'g'), to); cnt++; }
+      if (s.summary && s.summary.includes(from)) { s.summary = s.summary.replace(new RegExp(from, 'g'), to); cnt++; }
+    });
+    saveBreakdownData();
+    addAsMsg('assistant', '✅ 已将 ' + cnt + ' 处 "' + from + '" 改为 "' + to + '"');
+    return;
+  }
+
+  // "加角色 XXX"
+  const addCharMatch = cmd.match(/[加增添]\s*角色\s*([^\s，。]+)/);
+  if (addCharMatch) {
+    sc.forEach(s => { s.mainChars = s.mainChars ? s.mainChars + ' ' + addCharMatch[1] : addCharMatch[1]; });
+    saveBreakdownData();
+    addAsMsg('assistant', '✅ 已为所有场次添加角色：' + addCharMatch[1]);
+    return;
+  }
+
+  // "加道具 XXX"
+  const addPropMatch = cmd.match(/[加增添]\s*道具\s*([^\s，。]+)/);
+  if (addPropMatch) {
+    sc.forEach(s => { s.props = s.props ? s.props + ' ' + addPropMatch[1] : addPropMatch[1]; });
+    saveBreakdownData();
+    addAsMsg('assistant', '✅ 已为所有场次添加道具：' + addPropMatch[1]);
+    return;
+  }
+
+  // 看不懂
+  addAsMsg('assistant', '抱歉，我没理解你的意思 😅<br>试试这样说：<br>· "第3场改成夜外"<br>· "第1场加角色赵六"<br>· "所有张三改成张总"<br>· "加道具手机"<br>· "确认无误"');
+}
+
+// ============================================
+// 手动天数
+// ============================================
+function onPlanDaysChange() {
+  const days = parseInt(document.getElementById('plan-days').value);
+  if (!days || days < 1) { updateSuggestCard(); return; }
+  const n = AppBreakdown.scenes.length;
+  const tp = AppBreakdown.scenes.reduce((s,sc) => s + sc.pages, 0);
+  const perDay = Math.round((n / days) * 10) / 10;
+  document.getElementById('suggest-content').innerHTML =
+    '共 <b>' + n + '</b> 场 · <b>' + tp.toFixed(1) + '</b> 页 · 计划 <b>' + days + '</b> 天 · 建议 <b>' + perDay + '</b> 场/天';
+}
+
+// override updateSuggestCard to show days input
+const _origUpdateSuggest = updateSuggestCard;
+updateSuggestCard = function() {
+  _origUpdateSuggest();
+  document.getElementById('assistant-bar').style.display = 'block';
+  document.getElementById('plan-days').value = '';
+};
