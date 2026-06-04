@@ -259,7 +259,8 @@
         <textarea id="script-input" class="script-textarea" placeholder="粘贴剧本内容...&#10;&#10;示例格式：&#10;&#10;第1场  张三卧室  日内&#10;张三坐在床边，神情恍惚。&#10;张三：我该怎么办...&#10;&#10;第2场  公司会议室  日内&#10;李四推门进来，手里拿着一份文件。&#10;李四：方案通过了！&#10;张三（惊喜）：真的？！" rows="8"></textarea>
         <div class="si-actions">
           <button class="btn btn-primary btn-lg" onclick="analyzeScript()">🤖 AI分析剧本</button>
-          <button class="btn btn-ghost btn-lg" onclick="loadSampleScript()">📋 加载示例剧本</button>
+          <button class="btn btn-outline btn-lg" onclick="normalizeScript()">🔄 标准化剧本格式</button>
+          <button class="btn btn-ghost btn-lg" onclick="loadSampleScript()">📋 加载示例</button>
           <span class="si-status" id="script-status"></span>
         </div>
       </div>

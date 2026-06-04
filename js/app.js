@@ -503,112 +503,246 @@ function analyzeScript() {
   }, 300);
 }
 
+// --- 格式标准化 ---
+function normalizeScript() {
+  const text = document.getElementById('script-input').value.trim();
+  if (!text) { showToast('请先粘贴剧本内容 📝'); return; }
+
+  const normalized = convertToStandard(text);
+  document.getElementById('script-input').value = normalized;
+  document.getElementById('script-status').textContent = '✅ 已标准化为 ' + (normalized.match(/第\d+场/g)||[]).length + ' 场';
+  showToast('剧本已标准化 ✅ 可以点 AI分析 了');
+}
+
+function convertToStandard(text) {
+  // 先尝试检测格式
+  let result = '';
+
+  // 格式1: "第X场" 或 "第 X 场" — 已是标准格式
+  if (/第\s*\d+\s*场/.test(text)) {
+    // 已经基本标准，微调空格
+    return text.replace(/第\s*(\d+)\s*场/g, '第$1场');
+  }
+
+  // 格式2: "场X：" "场次X：" "Scene X:"
+  if (/场\s*\d+\s*[：:]/i.test(text) || /Scene\s*\d+/i.test(text)) {
+    return text.replace(/(?:场次?|Scene)\s*(\d+)\s*[：:]/gi, '第$1场');
+  }
+
+  // 格式3: 数字编号 "1." "1、" "1）" "（1）" + 场景描述
+  if (/(?:^|\n)\s*\d+[\.、）\)]\s*\S/.test(text)) {
+    return text.replace(/(?:^|\n)\s*(\d+)[\.、）\)]\s*/g, '\n第$1场 ');
+  }
+
+  // 格式4: "第一场" "第一幕" — 中文数字
+  const cnNums = { '一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9,'十':10,
+    '十一':11,'十二':12,'十三':13,'十四':14,'十五':15,'十六':16,'十七':17,'十八':18,'十九':19,'二十':20,
+    '二十一':21,'二十二':22,'二十三':23,'二十四':24,'二十五':25,'二十六':26,'二十七':27,'二十八':28,'二十九':29,'三十':30 };
+  if (/第[一二三四五六七八九十]+[场幕]/.test(text)) {
+    for (const [cn, num] of Object.entries(cnNums)) {
+      text = text.replace(new RegExp('第'+cn+'[场幕]', 'g'), '第'+num+'场');
+    }
+    return text;
+  }
+
+  // 格式5: INT./EXT. DAY/NIGHT 好莱坞格式
+  if (/\b(INT|EXT|INT\.\/EXT)\.?\s/i.test(text)) {
+    let sceneNum = 0;
+    return text.replace(/^((?:INT|EXT|INT\.\/EXT)\.?\s+.+)$/gm, (match) => {
+      sceneNum++;
+      const cleaned = match.replace(/^(INT|EXT|INT\.\/EXT)\.?\s*/i, '')
+        .replace(/\bDAY\b/gi, '日').replace(/\bNIGHT\b/gi, '夜')
+        .replace(/\bINT\b/i, '内').replace(/\bEXT\b/i, '外');
+      return '第' + sceneNum + '场 ' + cleaned;
+    });
+  }
+
+  // 格式6: 按空行分隔的块，每块第一行是场景头（含△▲●等标记）
+  if (text.includes('△') || text.includes('▲') || text.includes('●') || text.includes('■')) {
+    const blocks = text.split(/\n\s*\n/).filter(b => b.trim());
+    return blocks.map((block, i) => {
+      return '第' + (i+1) + '场 ' + block.trim().replace(/^[△▲●■]\s*/, '');
+    }).join('\n\n');
+  }
+
+  // 格式7: 纯文本块 — 按空行分割，每块作为一场
+  const paragraphs = text.split(/\n\s*\n/).filter(p => p.trim());
+  if (paragraphs.length > 1) {
+    return paragraphs.map((p, i) => '第' + (i+1) + '场 ' + p.trim()).join('\n\n');
+  }
+
+  // 兜底：尝试按"场景切换标记"分割
+  const markers = text.split(/(?:^|\n)(?=场景|地点|时间[：:])/);
+  if (markers.length > 1) {
+    return markers.filter(m => m.trim()).map((m, i) => '第' + (i+1) + '场 ' + m.trim()).join('\n\n');
+  }
+
+  // 实在无法解析，返回原文
+  return text;
+}
+
 function parseScript(text) {
   const scenes = [];
-  // 按"第X场"分割
-  const parts = text.split(/第\s*(\d+)\s*场/);
-  // parts[0] = before first scene, parts[1] = num1, parts[2] = content1, parts[3] = num2...
+
+  // 先标准化
+  text = convertToStandard(text);
+
+  // 多种分割模式
+  let parts = [];
+  let useChineseFormat = false;
+
+  // 模式A: "第X场" 中文标准
+  const cnMatch = text.match(/第\s*(\d+)\s*场/g);
+  if (cnMatch && cnMatch.length > 0) {
+    parts = text.split(/第\s*(\d+)\s*场/);
+    useChineseFormat = true;
+  }
+
+  // 模式B: 数字编号行（fallback）
+  if (!useChineseFormat) {
+    const numLines = text.split(/\n/).filter(l => /^\s*\d+[\.\、\s]/.test(l));
+    if (numLines.length > 1) {
+      // 按数字行分割
+      const blocks = text.split(/\n(?=\s*\d+[\.\、\s])/);
+      parts = [''];
+      blocks.forEach((block, i) => {
+        parts.push(String(i+1));
+        parts.push(block.replace(/^\s*\d+[\.\、\s]+/, ''));
+      });
+    }
+  }
+
+  // 模式C: 纯按空行分割（最后兜底）
+  if (parts.length < 3) {
+    const paras = text.split(/\n\s*\n/).filter(p => p.trim());
+    if (paras.length > 1) {
+      parts = [''];
+      paras.forEach((p, i) => {
+        parts.push(String(i+1));
+        parts.push(p.trim());
+      });
+    }
+  }
+
   for (let i = 1; i < parts.length; i += 2) {
     const num = parts[i];
     const content = (parts[i+1] || '').trim();
-    if (!content) continue;
+    if (!content || content.length < 5) continue;
 
     const lines = content.split(/\n/).map(l => l.trim()).filter(Boolean);
-
-    // 第一行通常是场景描述：主场景 次场景 日内/夜外
     const headerLine = lines[0] || '';
-    const headerParts = headerLine.split(/\s+/);
 
-    let mainLocation = headerParts[0] || '';
+    // 解析场景头
+    let mainLocation = '';
     let subLocation = '';
     let io = '内';
     let dn = '日';
 
-    // 检查是否包含内/外和日/夜标记
-    const ioDnMatch = headerLine.match(/([内外])([日夜])/);
-    if (ioDnMatch) {
-      io = ioDnMatch[1];
-      dn = ioDnMatch[2];
-      // 尝试提取场景名
-      const cleaned = headerLine.replace(/[内外][日夜]/, '').trim();
-      const cleanedParts = cleaned.split(/\s+/);
-      mainLocation = cleanedParts[0] || mainLocation;
-      subLocation = cleanedParts[1] || '';
+    // 提取内/外 + 日/夜
+    const ioDnCombo = headerLine.match(/([内外])\s*([日夜])(?!景|戏)/);
+    if (ioDnCombo) {
+      io = ioDnCombo[1]; dn = ioDnCombo[2];
     } else {
-      // 尝试从整个头部提取
-      const ioMatch = headerLine.match(/[内外](?!景)/);
-      const dnMatch = headerLine.match(/[日夜](?!戏)/);
-      if (ioMatch) io = ioMatch[0];
-      if (dnMatch) dn = dnMatch[0];
+      if (/外景|室外|户外|EXT|外拍/i.test(headerLine)) io = '外';
+      if (/夜|晚|NIGHT|傍晚|凌晨/i.test(headerLine)) dn = '夜';
     }
 
-    if (headerParts.length >= 2) {
-      mainLocation = headerParts[0];
-      subLocation = headerParts[1];
-    }
+    // 提取场景名
+    let cleanedHeader = headerLine
+      .replace(/[内外][日夜](?!景|戏)/g, '')
+      .replace(/外景|室内|室外|INT|EXT|DAY|NIGHT/gi, '')
+      .replace(/^[△▲●■▽▼○◆◇]\s*/, '')
+      .trim();
 
-    // 内容梗概：取前2-3行非对话行
+    const headerWords = cleanedHeader.split(/[\s\s]+/).filter(Boolean);
+    mainLocation = headerWords[0] || '未知场景';
+    subLocation = headerWords[1] || '';
+
+    // 内容分析
     const summaryLines = [];
     const characters = new Set();
     const minorChars = new Set();
     const props = new Set();
-    const costumes = new Set();
 
-    for (let j = 1; j < Math.min(lines.length, 10); j++) {
+    for (let j = 1; j < Math.min(lines.length, 15); j++) {
       const line = lines[j];
-      // 跳过空行
-      if (!line) continue;
-      // 检测角色对白：中文名+冒号 或 中文名（动作）
-      const dialogMatch = line.match(/^([^\s：:]+)[：:]\s*(.+)/);
-      const actionMatch = line.match(/^([^\s：:]+)[（(]([^）)]+)[）)]/);
+      if (!line || line.length < 2) continue;
+
+      // 对白检测（更宽松）
+      const dialogMatch = line.match(/^([^\s：:（）()]{1,6})[：:]\s*(.+)/);
+      const actionMatch = line.match(/^([^\s：:（）()]{1,6})[（(]([^）)]+)[）)]/);
+
       if (dialogMatch) {
-        characters.add(dialogMatch[1]);
-        if (summaryLines.length < 2) summaryLines.push('💬 ' + dialogMatch[1] + '：' + dialogMatch[2].substring(0, 20));
+        const charName = dialogMatch[1];
+        if (!/^(第|场|场景|时间|地点|内|外|日|夜|INT|EXT|DAY|NIGHT)$/i.test(charName)) {
+          characters.add(charName);
+          if (summaryLines.length < 3) summaryLines.push('💬 ' + charName + '：' + dialogMatch[2].substring(0, 25));
+        }
       } else if (actionMatch) {
-        characters.add(actionMatch[1]);
-        if (summaryLines.length < 2) summaryLines.push('🎬 ' + line.substring(0, 30));
-      } else if (line.length > 3) {
-        if (summaryLines.length < 2) summaryLines.push(line.substring(0, 40));
-        // 道具检测
-        const propMatches = line.match(/拿着|递给|掏出|打开|桌上|包里|手中/g);
-        if (propMatches) {
-          const propMatch = line.match(/(?:拿着|递给|掏出|打开)([^，。！？\s]{1,6})/);
-          if (propMatch) props.add(propMatch[1]);
+        const charName = actionMatch[1];
+        if (!/^(第|场|场景|时间|地点)$/.test(charName)) {
+          characters.add(charName);
+          if (summaryLines.length < 2) summaryLines.push(line.substring(0, 35));
+        }
+      } else if (line.length > 5 && summaryLines.length < 3) {
+        // 描述性文字
+        const cleanLine = line.replace(/^[△▲●■▽▼○◆◇]\s*/, '');
+        if (!/^[\(（\[【]/.test(cleanLine)) {
+          summaryLines.push(cleanLine.substring(0, 45));
         }
       }
-    }
 
-    // 页数估算：按字数（中文约250字/页）
-    const charCount = content.replace(/\s/g, '').length;
-    const pages = Math.max(0.5, Math.round(charCount / 250 * 2) / 2);
-
-    // 次要角色
-    const allLines = content;
-    const minorMatch = allLines.match(/(?:走进|路过|出现|进来|出去)[^。]*(?:赵|钱|孙|周|吴|郑|王|冯|陈|褚|卫|蒋|沈|韩|杨|保安|前台|秘书|助理|司机|路人)/g);
-    if (minorMatch) {
-      minorMatch.forEach(m => {
-        const nameMatch = m.match(/([赵钱孙周吴郑王冯陈褚卫蒋沈韩杨][^\s，。]{0,3}|保安|前台|秘书|助理|司机|路人)/);
-        if (nameMatch && !characters.has(nameMatch[1])) minorChars.add(nameMatch[1]);
+      // 道具检测（扩展）
+      const propPatterns = ['拿着','递给','掏出','打开','放在','取出','端起','放下','握着','背上','拖出','举起'];
+      propPatterns.forEach(verb => {
+        const m = line.match(new RegExp(verb + '([一-龥a-zA-Z0-9]{1,8})'));
+        if (m && m[1].length < 8) props.add(m[1]);
       });
     }
 
+    // 页数
+    const charCount = content.replace(/[\s\n]/g, '').length;
+    const pages = Math.max(0.5, Math.round(charCount / 200 * 2) / 2);
+
+    // 次要角色
+    const allText = content;
+    const titlePattern = /(?:走进|路过|出现|进来|出去|推门|推门进来|正好|突然|这时)[^。！？\n]{2,20}(?:[A-Z一-鿿]{2,4})(?:站|说|看|笑|走|坐|拿|递|打|开|关|来到)/g;
+    const foundNames = new Set();
+    let m;
+    while ((m = titlePattern.exec(allText)) !== null) {
+      const nameMatch = m[0].match(/([一-鿿]{2,4})(?:站|说|看|笑|走|坐|拿|递|打|开|关|来到|：|:)/);
+      if (nameMatch && !characters.has(nameMatch[1])) foundNames.add(nameMatch[1]);
+    }
+    minorChars.forEach(c => foundNames.add(c)); // 保留之前的检测结果
+
+    // 服装检测
+    const costumePattern = /穿[着上]|披[着上]|戴[着上]|身[着穿]/g;
+    const foundCostumes = new Set();
+    while ((m = costumePattern.exec(allText)) !== null) {
+      const rest = allText.substring(m.index + m[0].length).substring(0, 15).match(/^([^，。！？\n]{1,10})/);
+      if (rest) foundCostumes.add(rest[1].replace(/[了的]/, ''));
+    }
+
+    if (!summaryLines.length) summaryLines.push(content.substring(0, 45));
+
     scenes.push({
-      id: Date.now() + parseInt(num),
+      id: Date.now() + parseInt(num) + Math.random() * 100,
       num: num,
       mainLocation: mainLocation,
       subLocation: subLocation,
       io: io,
       dn: dn,
-      summary: summaryLines.join('；') || content.substring(0, 40),
+      summary: summaryLines.join('；'),
       pages: pages,
       mainChars: Array.from(characters).join('、'),
-      minorChars: Array.from(minorChars).join('、'),
+      minorChars: Array.from(foundNames).join('、'),
       props: Array.from(props).join('、'),
-      costumes: '',
+      costumes: Array.from(foundCostumes).join('、'),
       remark: '',
       assignedDay: null
     });
   }
+
   return scenes;
 }
 
