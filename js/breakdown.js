@@ -101,127 +101,253 @@ async function analyzeScript() {
 }
 
 // ============================================
-// AI增强 —— 逐场使用专业影视制片prompt
+// AI增强 v6 — 两轮分析 + 批量调用
+// ============================================
+
+const SYSTEM_PROMPT_ROUND1 = `You are a veteran Script Supervisor with 15+ years of feature film experience, working on a Chinese-language production.
+
+## YOUR TASK
+Review the following scene breakdown produced by an automated parser. The parser's results are a REFERENCE ONLY — you MUST independently re-analyze each scene's raw text and CORRECT any errors or omissions.
+
+## FOR EACH SCENE, FIX:
+1. **summary**: Write one tight sentence (<50 Chinese chars) capturing the dramatic action. Who does what? No literary fluff.
+2. **mainChars**: Characters with dialogue or significant physical action in THIS scene.
+3. **minorChars**: Extras/background characters. MERGE duplicates: if "young man"/"guy"/"man" refer to the same person, use ONE label like "路人男性".
+4. **props**: Physical objects a character USES, HOLDS, or INTERACTS WITH.
+5. **costumes**: Only if SPECIALLY NOTED (e.g. "wedding dress", "uniform" — NOT ordinary clothes).
+6. **remark**: Any production notes.
+
+## CRITICAL PROHIBITIONS
+❌ DO NOT mark weather/nature as props (sunlight, rain, wind, river, trees, mountains)
+❌ DO NOT mark character appearance as props (long hair, suit, dress — unless explicitly handled as a prop)
+❌ DO NOT mark emotions/abstract concepts (crying, laughter, silence, anger)
+❌ DO NOT mark camera/script directions as characters (镜头, VO without a person, scene transitions)
+❌ DO NOT invent characters mentioned in dialogue but not physically present
+
+## CHARACTER PRIORITY
+1. Has dialogue lines (XXX：) → MUST be included
+2. Has physical actions (walks in, sits down, hands over object) → strong candidate
+3. Only mentioned in dialogue → DO NOT include
+
+## PROP CRITERIA (strict)
+✅ Character actively using/holding/delivering an object
+✅ Object drives the scene (key prop: letter, photo, weapon, gift)
+❌ Background scenery
+❌ Clothing (unless plot-critical interaction)
+
+## FEW-SHOT EXAMPLES
+
+**Scene 1:**
+Text: "1 江边 日外\\n妈妈和女儿在江边散步，妈妈侧肩挂着白色的帆布包。女儿拿着手机在看。妈妈从包里掏出保温杯递给女儿。"
+Parser says: mainChars:["妈妈","女儿"] props:["白色的帆布包","手机","保温杯"]
+Your output:
+{"num":"1","summary":"江边散步时妈妈从帆布包掏出保温杯递给女儿","mainChars":"妈妈 女儿","minorChars":"","props":"白色帆布包 手机 保温杯","costumes":"","remark":""}
+
+**Scene 2:**
+Text: "3 银杏树下 日外\\n妈妈(O.S.)你好啊,你能不能帮我拍一张照片。女儿:妈你别麻烦人家了。路人男性接过手机帮她们拍照。"
+Parser says: mainChars:["妈妈","女儿","路人男性"] props:["手机"]
+Your output:
+{"num":"3","summary":"妈妈请路人男性用手机帮她和女儿合影，女儿不耐烦","mainChars":"妈妈 女儿","minorChars":"路人男性","props":"手机","costumes":"","remark":"路人男性为随机找的拍摄者"}
+
+**Scene 3 (tricky):**
+Text: "5 家内餐桌 夜内\\n餐桌上摆着三菜一汤。妈妈夹了一块红烧肉放进女儿碗里。窗外下着雨，风吹动窗帘。"
+Parser says: mainChars:["妈妈","女儿"] props:["红烧肉","窗帘"]
+Your output — CORRECT the error (rain/wind/curtain are NOT props):
+{"num":"5","summary":"餐桌上妈妈夹红烧肉给女儿，窗外风雨交加","mainChars":"妈妈 女儿","minorChars":"","props":"红烧肉","costumes":"","remark":""}
+
+## INPUT FORMAT
+You will receive a JSON array of scenes. Each scene has: num, location, io, dn, the parser's best-guess mainChars, and the rawText.
+
+## OUTPUT FORMAT
+Return ONLY a JSON array. Each element:
+{"num":"scene_number","summary":"<50 chars","mainChars":"space separated","minorChars":"space separated","props":"space separated","costumes":"space separated","remark":""}
+Omit fields only if they are empty strings.`;
+
+// Round 2: Global consistency
+const SYSTEM_PROMPT_ROUND2 = `You are a veteran Script Supervisor performing a GLOBAL CONSISTENCY CHECK across all scenes.
+
+## YOUR TASK
+Review the complete scene breakdown below. Find and fix:
+
+1. **CHARACTER CONSOLIDATION**: If "张三"/"张总"/"老张" appear across scenes, they may be the SAME PERSON. Note in remark field.
+2. **CHARACTER CLASSIFICATION**: Characters appearing in 3+ scenes with dialogue → mainChars. Appearing in 1 scene, no dialogue → minorChars.
+3. **KEY PROPS**: Props appearing in 2+ scenes → mark as "🔑关键道具:xxx" in remark of their first scene.
+4. **DUPLICATE PROP NAMES**: Merge equivalent prop names (手机壳/手机套 → 手机壳).
+
+## INPUT
+JSON array of all scenes with their current mainChars, minorChars, props.
+
+## OUTPUT
+Return a JSON object with two fields:
+{
+  "charAliases": {"张三":["张总","老张"]},
+  "keyProps": ["手机","保温杯","白色帆布包"],
+  "sceneUpdates": [{"num":"1","mainChars":"updated","minorChars":"updated","props":"updated","remark":"updated"}]
+}
+Only include scenes that actually changed.`;
+
+// ============================================
+// 批量调用
 // ============================================
 async function aiEnhanceScenes(scenes) {
-  // 分批处理，每批最多5场
-  const batchSize = 5;
-  const results = [];
+  const statusEl = document.getElementById('script-status');
+  const BATCH = 8;
 
-  for (let i = 0; i < scenes.length; i += batchSize) {
-    const batch = scenes.slice(i, i + batchSize);
-    const statusEl = document.getElementById('script-status');
-    if (statusEl) statusEl.textContent = '🤖 AI增强 ' + (i+1) + '/' + scenes.length + '...';
+  // ── Round 1: 逐批分析 ──
+  statusEl.textContent = '🤖 Round 1/2 逐场分析...';
+  const round1Results = [];
+
+  for (let i = 0; i < scenes.length; i += BATCH) {
+    const batch = scenes.slice(i, i + BATCH);
+    statusEl.textContent = '🤖 R1: ' + (i+1) + '-' + Math.min(i+BATCH, scenes.length) + '/' + scenes.length;
 
     try {
-      const enhanced = await enhanceBatch(batch);
-      results.push(...enhanced);
+      const enhanced = await callAIRound1(batch);
+      round1Results.push(...enhanced);
     } catch(e) {
-      console.log('批次增强失败，保留本地结果', e);
-      results.push(...batch);
+      console.log('R1 batch failed, keeping local', e);
+      round1Results.push(...batch.map(s => ({ ...s })));
     }
   }
 
-  // 合并：保留本地结构，AI只更新摘要/道具/服装
-  const enhancedMap = {};
-  results.forEach(r => { enhancedMap[String(r.num)] = r; });
+  // 合并R1结果
+  const r1Map = {};
+  round1Results.forEach(r => { r1Map[String(r.num)] = r; });
 
-  return scenes.map(s => {
-    const enh = enhancedMap[String(s.num)] || {};
+  const merged = scenes.map(s => {
+    const r1 = r1Map[String(s.num)] || {};
     return {
       ...s,
-      summary: enh.summary || s.summary,
-      props: enh.props || s.props,
-      costumes: enh.costumes || s.costumes,
-      minorChars: enh.minorChars || s.minorChars,
-      remark: enh.remark || s.remark
+      summary: r1.summary || s.summary,
+      mainChars: cleanAndMerge(s.mainChars, r1.mainChars),
+      minorChars: cleanAndMerge(s.minorChars, r1.minorChars),
+      props: cleanAndMerge(s.props, r1.props),
+      costumes: r1.costumes || s.costumes,
+      remark: r1.remark || s.remark
     };
   });
-}
 
-function buildPerScenePrompt(scene) {
-  return `# Role
-你是一位极其严谨、拥有10年以上院线电影筹备经验的专业电影制片统筹（Script Supervisor）。你的任务是严格按照中国影视制片工业化标准，对以下给出的【单场剧本文本】进行要素拆解。
-
-# Workflow & Critical Rules
-1. 【严格的单场限制】：你只处理当前给出的这一场戏，绝对不要脑补或结合前后场次的内容。
-2. 【内容梗概提取规范】：用一句话概括本场发生的"戏剧动作核心事件"（Who does what），字数控制在50字以内。严禁描写文学化意境。
-3. 【主要角色提取规范】：
-   - 必须是本场有台词（包括O.S.画外音）、或在动作描写中有明确出场、且对剧情有推动作用的实体角色。
-   - 严禁提取剧本台词中"提及"但实际没有肉身到场的角色。
-4. 【次要角色/群众演员提取规范】：
-   - 剧本中出现的"路人男性"、"年轻人"、"小伙子"如果指的是同一个人，必须统一归类合并为【路人男性】，并在备注中说明。
-   - 骑自行车的人、跑步的人属于背景群众（环境背景），归类为【次要角色/群演】。
-5. 【制片级道具提取规范（最核心）】：
-   - 必须是画面中角色【正在使用、持有、交付、或产生直接交互】的实体物品（例如：白色帆布包、三明治、保温杯、矿泉水、手机、相册、照片）。
-   - 严禁将大自然环境（如：江水、山河、阳光、风、雨水、树木）识别为道具。
-   - 严禁将服装配饰（如：衣服、绿色的头发）在没有特殊交互的情况下识别为道具。
-
-# 本场已确定信息（来自精确解析器，不可修改）
-- 场号: ${scene.num}
-- 主场景: ${scene.location}
-- 内外: ${scene.io}
-- 日夜: ${scene.dn}
-- 已提取主要角色(从对白行XXX：捕获): ${scene.mainChars || '无'}
-
-# 剧本原文（仅本场）
-${scene.rawText?.substring(0, 600)}
-
-# 输出格式
-严格按以下JSON输出，只返回JSON，不要任何其它文字：
-{
-  "num": "${scene.num}",
-  "summary": "50字内梗概",
-  "mainChars": ["${(scene.mainChars||'').split(/[\s、,]+/).filter(Boolean).join('","')}"],
-  "minorChars": ["次要角色名（有则填，无则为空数组）"],
-  "props": ["道具名"],
-  "costumes": ["特殊服装"],
-  "remark": "备注"
-}`;
-}
-
-async function enhanceBatch(batch) {
-  // 逐场调用API以确保精准
-  const results = [];
-  for (const scene of batch) {
-    const prompt = buildPerScenePrompt(scene);
+  // ── Round 2: 全局一致性（仅在≥4场时执行） ──
+  if (merged.length >= 4) {
+    statusEl.textContent = '🤖 Round 2/2 全局一致性校验...';
     try {
-      const resp = await fetch('https://api.deepseek.com/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + dsApiKey },
-        body: JSON.stringify({
-          model: 'deepseek-chat',
-          messages: [
-            { role: 'user', content: prompt }
-          ],
-          temperature: 0.1,
-          max_tokens: 500
-        })
-      });
-      if (!resp.ok) throw new Error('API error');
-      const data = await resp.json();
-      const content = data.choices?.[0]?.message?.content || '';
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        // 清理 — AI返回可能为数组或字符串
-        const arr = (v) => Array.isArray(v) ? v.join(' ') : (typeof v === 'string' ? v : '');
-        results.push({
-          num: scene.num,
-          summary: (parsed.synopsis || parsed.summary || '').substring(0, 55),
-          minorChars: arr(parsed.minorChars || parsed.minor_characters || ''),
-          props: arr(parsed.props || ''),
-          costumes: arr(parsed.costumes || parsed.costume_notes || ''),
-          remark: (parsed.remark || parsed.remarks || '')
-        });
-      } else {
-        results.push(scene);
-      }
+      const r2 = await callAIRound2(merged);
+      applyRound2Results(merged, r2);
     } catch(e) {
-      results.push(scene); // 单场失败不阻塞
+      console.log('R2 failed, using R1 results', e);
     }
   }
-  return results;
+
+  statusEl.textContent = '✅ ' + merged.length + ' 场 (AI增强)';
+  return merged;
+}
+
+async function callAIRound1(batch) {
+  const input = batch.map(s => ({
+    num: s.num, location: s.location, io: s.io, dn: s.dn,
+    parserMainChars: s.mainChars,
+    rawText: (s.rawText || '').substring(0, 400)
+  }));
+
+  const resp = await fetch('https://api.deepseek.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + dsApiKey },
+    body: JSON.stringify({
+      model: 'deepseek-chat',
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT_ROUND1 },
+        { role: 'user', content: JSON.stringify(input) }
+      ],
+      temperature: 0.15,
+      max_tokens: 3000,
+      response_format: { type: 'json_object' }
+    })
+  });
+
+  if (!resp.ok) throw new Error('API ' + resp.status);
+  const data = await resp.json();
+  const content = data.choices?.[0]?.message?.content || '';
+
+  // 提取JSON数组
+  const arrMatch = content.match(/\[[\s\S]*\]/);
+  if (!arrMatch) throw new Error('No JSON array in response');
+  return JSON.parse(arrMatch[0]);
+}
+
+async function callAIRound2(scenes) {
+  const input = scenes.map(s => ({
+    num: s.num, location: s.location,
+    mainChars: s.mainChars, minorChars: s.minorChars, props: s.props,
+    remark: s.remark
+  }));
+
+  const resp = await fetch('https://api.deepseek.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + dsApiKey },
+    body: JSON.stringify({
+      model: 'deepseek-chat',
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT_ROUND2 },
+        { role: 'user', content: JSON.stringify(input) }
+      ],
+      temperature: 0.1,
+      max_tokens: 2000,
+      response_format: { type: 'json_object' }
+    })
+  });
+
+  if (!resp.ok) throw new Error('API ' + resp.status);
+  const data = await resp.json();
+  return JSON.parse(data.choices?.[0]?.message?.content || '{}');
+}
+
+function applyRound2Results(scenes, r2) {
+  if (!r2.sceneUpdates) return;
+
+  const updates = {};
+  r2.sceneUpdates.forEach(u => { updates[String(u.num)] = u; });
+
+  scenes.forEach(s => {
+    const u = updates[String(s.num)];
+    if (!u) return;
+    if (u.mainChars) s.mainChars = u.mainChars;
+    if (u.minorChars) s.minorChars = u.minorChars;
+    if (u.props) s.props = u.props;
+    if (u.remark) s.remark = u.remark;
+  });
+
+  // 如果有角色别名映射，在所有场次中全局替换
+  if (r2.charAliases) {
+    Object.entries(r2.charAliases).forEach(([canonical, aliases]) => {
+      scenes.forEach(s => {
+        const mc = (s.mainChars || '').split(/[\s、,]+/);
+        aliases.forEach(alias => {
+          const idx = mc.indexOf(alias);
+          if (idx > -1) mc[idx] = canonical;
+        });
+        s.mainChars = [...new Set(mc)].join(' ');
+      });
+    });
+  }
+
+  // 标记关键道具
+  if (r2.keyProps) {
+    r2.keyProps.forEach(prop => {
+      scenes.forEach(s => {
+        if ((s.props || '').includes(prop) && !(s.remark || '').includes('🔑')) {
+          s.remark = (s.remark || '') + ' 🔑' + prop;
+        }
+      });
+    });
+  }
+}
+
+function cleanAndMerge(local, ai) {
+  const localSet = new Set((local || '').split(/[\s、,]+/).filter(Boolean));
+  const aiSet = new Set((ai || '').split(/[\s、,]+/).filter(Boolean));
+  // AI的补充，但不过滤掉本地已有的
+  aiSet.forEach(x => localSet.add(x));
+  return [...localSet].join(' ');
 }
 
 // ============================================
