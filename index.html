@@ -256,7 +256,7 @@
           <h3>📝 剧本输入</h3>
           <span class="si-hint">支持标准中文剧本格式：场号/场景/内外/日夜/角色对白</span>
         </div>
-        <textarea id="script-input" class="script-textarea" placeholder="粘贴剧本内容...&#10;&#10;示例格式：&#10;&#10;第1场  张三卧室  日内&#10;张三坐在床边，神情恍惚。&#10;张三：我该怎么办...&#10;&#10;第2场  公司会议室  日内&#10;李四推门进来，手里拿着一份文件。&#10;李四：方案通过了！&#10;张三（惊喜）：真的？！" rows="8"></textarea>
+        <textarea id="script-input" class="script-textarea" placeholder="粘贴剧本内容，每场开头格式：&#10;&#10;1 场景名 日内&#10;描述内容...&#10;角色名：对白...&#10;&#10;2 另一个场景 夜外&#10;描述内容...&#10;角色名：对白...&#10;&#10;支持格式：1 xxx / 1. xxx / 1、xxx 等" rows="8"></textarea>
         <div class="si-actions">
           <button class="btn btn-primary btn-lg" onclick="analyzeScript()">🤖 AI分析剧本</button>
           <button class="btn btn-outline btn-lg" onclick="normalizeScript()">🔄 标准化剧本格式</button>

@@ -444,32 +444,32 @@ function restoreTable(tbodyId, data, rowFn) {
 let AppBreakdown = { scenes: [], days: [] };
 
 // --- 示例剧本 ---
-const SAMPLE_SCRIPT = `第1场  张三的卧室  日内
+const SAMPLE_SCRIPT = `1 张三卧室 日内
 阳光透过窗帘洒进来，张三躺在床上盯着天花板发呆。手机响了。
-张三（接电话）：喂...
+张三：喂...
 李四（电话里）：还没起？今天的会议你忘了？
 张三猛地坐起来。
 张三：几点了？！我马上到！
 
-第2场  公司会议室  日内
+2 公司会议室 日内
 十几个人围坐在会议桌前，气氛凝重。
 王总：这个方案客户不满意，全部重做。
 张三低着头不敢说话。李四在旁边悄悄推了推他。
-李四（小声）：别慌，我有备份方案。
+李四：别慌，我有备份方案。
 
-第3场  公司茶水间  日内
+3 公司茶水间 日内
 张三和李四在冲咖啡。
 张三：多亏了你，不然我就完了。
 李四：咱们是搭档嘛。
 赵五走进来，看了看两人。
 赵五：听说你们那个项目要延期？
 
-第4场  张三的卧室  夜内
+4 张三卧室 夜内
 张三坐在电脑前加班改方案。窗外下起了雨。
 手机屏幕亮起，是妈妈发来的消息："生日快乐"
 张三看了一眼，眼眶微红，继续低头工作。
 
-第5场  公司天台  日外
+5 公司天台 日外
 张三站在天台上吹风。李四上来找他。
 李四：就知道你在这儿。
 张三：有时候不知道这么拼是为了什么。
@@ -481,263 +481,181 @@ function loadSampleScript() {
   showToast('示例剧本已加载 📋');
 }
 
+// --- 格式标准化 ---
+function normalizeScript() {
+  let text = document.getElementById('script-input').value.trim();
+  if (!text) { showToast('请先粘贴剧本内容 📝'); return; }
+
+  // 如果已经是数字开头的格式，跳过
+  if (/^\d{1,3}\s/.test(text.split(/\n/).filter(l => l.trim())[0] || '')) {
+    showToast('已是标准格式 ✅，可直接 AI 分析');
+    return;
+  }
+
+  // 第X场 → 数字
+  text = text.replace(/第\s*(\d+)\s*场\s*/g, '$1 ');
+
+  // 场X：/ 场次X：/ Scene X: → 数字
+  text = text.replace(/(?:场次?|Scene)\s*(\d+)\s*[：:]\s*/gi, '$1 ');
+
+  // 数字. / 数字、/ （数字） → 数字
+  text = text.replace(/(?:^|\n)\s*(\d+)[\.、）\)]\s*/g, '\n$1 ');
+
+  // 中文数字场
+  const cnNums = {'一':'1','二':'2','三':'3','四':'4','五':'5','六':'6','七':'7','八':'8','九':'9','十':'10',
+    '十一':'11','十二':'12','十三':'13','十四':'14','十五':'15','十六':'16','十七':'17','十八':'18','十九':'19','二十':'20',
+    '二十一':'21','二十二':'22','二十三':'23','二十四':'24','二十五':'25','二十六':'26','二十七':'27','二十八':'28','二十九':'29','三十':'30'};
+  for (const [cn, num] of Object.entries(cnNums)) {
+    text = text.replace(new RegExp('第'+cn+'[场幕]', 'g'), num + ' ');
+  }
+
+  // INT/EXT 好莱坞格式
+  if (/\b(INT|EXT|INT\.\/EXT)\.?\s/i.test(text)) {
+    let n = 0;
+    text = text.replace(/^(?:INT|EXT|INT\.\/EXT)\.?\s+(.+)$/gm, (match, rest) => {
+      n++;
+      const cleaned = rest.replace(/\bDAY\b/gi,'日').replace(/\bNIGHT\b/gi,'夜');
+      return n + ' ' + cleaned;
+    });
+  }
+
+  // 按空行分隔的块 → 自动编号
+  if (!/^\d{1,3}\s/.test(text.split(/\n/).filter(l => l.trim())[0] || '')) {
+    const blocks = text.split(/\n\s*\n/).filter(b => b.trim());
+    if (blocks.length > 1) {
+      text = blocks.map((b, i) => (i+1) + ' ' + b.trim().replace(/^[△▲●■▽▼○◆◇●]\s*/, '')).join('\n\n');
+    }
+  }
+
+  document.getElementById('script-input').value = text;
+  const cnt = (text.match(/^\d{1,3}\s/gm) || []).length;
+  document.getElementById('script-status').textContent = '✅ 已标准化 ' + cnt + ' 场，点 AI分析';
+  showToast('已标准化 ✅ 点 AI分析 即可');
+}
+
 // --- AI剧本解析 ---
 function analyzeScript() {
   const text = document.getElementById('script-input').value.trim();
   if (!text) { showToast('请先粘贴剧本内容 📝'); return; }
 
-  document.getElementById('script-status').textContent = '🤖 分析中...';
-
-  setTimeout(() => {
-    const scenes = parseScript(text);
-    AppBreakdown.scenes = scenes;
-    AppBreakdown.days = loadStoredDays() || [];
-    document.getElementById('script-status').textContent = '✅ 共识别 ' + scenes.length + ' 场';
-    document.getElementById('bd-layout').style.display = 'grid';
-    document.getElementById('ai-suggest').style.display = 'block';
-
-    updateSuggestCard();
-    renderSceneTable();
-    renderDayPanels();
-    saveBreakdownData();
-  }, 300);
-}
-
-// --- 格式标准化 ---
-function normalizeScript() {
-  const text = document.getElementById('script-input').value.trim();
-  if (!text) { showToast('请先粘贴剧本内容 📝'); return; }
-
-  const normalized = convertToStandard(text);
-  document.getElementById('script-input').value = normalized;
-  document.getElementById('script-status').textContent = '✅ 已标准化为 ' + (normalized.match(/第\d+场/g)||[]).length + ' 场';
-  showToast('剧本已标准化 ✅ 可以点 AI分析 了');
-}
-
-function convertToStandard(text) {
-  // 先尝试检测格式
-  let result = '';
-
-  // 格式1: "第X场" 或 "第 X 场" — 已是标准格式
-  if (/第\s*\d+\s*场/.test(text)) {
-    // 已经基本标准，微调空格
-    return text.replace(/第\s*(\d+)\s*场/g, '第$1场');
+  const scenes = parseScript(text);
+  if (scenes.length === 0) {
+    document.getElementById('script-status').textContent = '❌ 未识别到场次，请点"标准化"或检查格式';
+    showToast('未识别到场次！请先点 🔄 标准化剧本格式');
+    return;
   }
 
-  // 格式2: "场X：" "场次X：" "Scene X:"
-  if (/场\s*\d+\s*[：:]/i.test(text) || /Scene\s*\d+/i.test(text)) {
-    return text.replace(/(?:场次?|Scene)\s*(\d+)\s*[：:]/gi, '第$1场');
-  }
+  AppBreakdown.scenes = scenes;
+  AppBreakdown.days = loadStoredDays() || [];
+  document.getElementById('script-status').textContent = '✅ 共识别 ' + scenes.length + ' 场';
+  document.getElementById('bd-layout').style.display = 'grid';
+  document.getElementById('ai-suggest').style.display = 'block';
 
-  // 格式3: 数字编号 "1." "1、" "1）" "（1）" + 场景描述
-  if (/(?:^|\n)\s*\d+[\.、）\)]\s*\S/.test(text)) {
-    return text.replace(/(?:^|\n)\s*(\d+)[\.、）\)]\s*/g, '\n第$1场 ');
-  }
-
-  // 格式4: "第一场" "第一幕" — 中文数字
-  const cnNums = { '一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9,'十':10,
-    '十一':11,'十二':12,'十三':13,'十四':14,'十五':15,'十六':16,'十七':17,'十八':18,'十九':19,'二十':20,
-    '二十一':21,'二十二':22,'二十三':23,'二十四':24,'二十五':25,'二十六':26,'二十七':27,'二十八':28,'二十九':29,'三十':30 };
-  if (/第[一二三四五六七八九十]+[场幕]/.test(text)) {
-    for (const [cn, num] of Object.entries(cnNums)) {
-      text = text.replace(new RegExp('第'+cn+'[场幕]', 'g'), '第'+num+'场');
-    }
-    return text;
-  }
-
-  // 格式5: INT./EXT. DAY/NIGHT 好莱坞格式
-  if (/\b(INT|EXT|INT\.\/EXT)\.?\s/i.test(text)) {
-    let sceneNum = 0;
-    return text.replace(/^((?:INT|EXT|INT\.\/EXT)\.?\s+.+)$/gm, (match) => {
-      sceneNum++;
-      const cleaned = match.replace(/^(INT|EXT|INT\.\/EXT)\.?\s*/i, '')
-        .replace(/\bDAY\b/gi, '日').replace(/\bNIGHT\b/gi, '夜')
-        .replace(/\bINT\b/i, '内').replace(/\bEXT\b/i, '外');
-      return '第' + sceneNum + '场 ' + cleaned;
-    });
-  }
-
-  // 格式6: 按空行分隔的块，每块第一行是场景头（含△▲●等标记）
-  if (text.includes('△') || text.includes('▲') || text.includes('●') || text.includes('■')) {
-    const blocks = text.split(/\n\s*\n/).filter(b => b.trim());
-    return blocks.map((block, i) => {
-      return '第' + (i+1) + '场 ' + block.trim().replace(/^[△▲●■]\s*/, '');
-    }).join('\n\n');
-  }
-
-  // 格式7: 纯文本块 — 按空行分割，每块作为一场
-  const paragraphs = text.split(/\n\s*\n/).filter(p => p.trim());
-  if (paragraphs.length > 1) {
-    return paragraphs.map((p, i) => '第' + (i+1) + '场 ' + p.trim()).join('\n\n');
-  }
-
-  // 兜底：尝试按"场景切换标记"分割
-  const markers = text.split(/(?:^|\n)(?=场景|地点|时间[：:])/);
-  if (markers.length > 1) {
-    return markers.filter(m => m.trim()).map((m, i) => '第' + (i+1) + '场 ' + m.trim()).join('\n\n');
-  }
-
-  // 实在无法解析，返回原文
-  return text;
+  updateSuggestCard();
+  renderSceneTable();
+  renderDayPanels();
+  saveBreakdownData();
 }
 
 function parseScript(text) {
   const scenes = [];
+  const lines = text.split(/\n/);
+  let currentScene = null;
 
-  // 先标准化
-  text = convertToStandard(text);
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    const line = raw.trim();
+    if (!line) continue;
 
-  // 多种分割模式
-  let parts = [];
-  let useChineseFormat = false;
+    // 检测场次开头：行首数字（1-999）后跟空格/句号/顿号
+    const sceneMatch = line.match(/^(\d{1,3})\s*[\.\、\s．。]\s*(.+)/);
+    // 也匹配纯数字后跟中文（无标点）："1卧室 日内"
+    const bareMatch = line.match(/^(\d{1,3})\s*([一-鿿])/);
 
-  // 模式A: "第X场" 中文标准
-  const cnMatch = text.match(/第\s*(\d+)\s*场/g);
-  if (cnMatch && cnMatch.length > 0) {
-    parts = text.split(/第\s*(\d+)\s*场/);
-    useChineseFormat = true;
-  }
+    if (sceneMatch || bareMatch) {
+      // 保存上一场
+      if (currentScene) finalizeScene(currentScene, scenes);
 
-  // 模式B: 数字编号行（fallback）
-  if (!useChineseFormat) {
-    const numLines = text.split(/\n/).filter(l => /^\s*\d+[\.\、\s]/.test(l));
-    if (numLines.length > 1) {
-      // 按数字行分割
-      const blocks = text.split(/\n(?=\s*\d+[\.\、\s])/);
-      parts = [''];
-      blocks.forEach((block, i) => {
-        parts.push(String(i+1));
-        parts.push(block.replace(/^\s*\d+[\.\、\s]+/, ''));
-      });
-    }
-  }
-
-  // 模式C: 纯按空行分割（最后兜底）
-  if (parts.length < 3) {
-    const paras = text.split(/\n\s*\n/).filter(p => p.trim());
-    if (paras.length > 1) {
-      parts = [''];
-      paras.forEach((p, i) => {
-        parts.push(String(i+1));
-        parts.push(p.trim());
-      });
-    }
-  }
-
-  for (let i = 1; i < parts.length; i += 2) {
-    const num = parts[i];
-    const content = (parts[i+1] || '').trim();
-    if (!content || content.length < 5) continue;
-
-    const lines = content.split(/\n/).map(l => l.trim()).filter(Boolean);
-    const headerLine = lines[0] || '';
-
-    // 解析场景头
-    let mainLocation = '';
-    let subLocation = '';
-    let io = '内';
-    let dn = '日';
-
-    // 提取内/外 + 日/夜
-    const ioDnCombo = headerLine.match(/([内外])\s*([日夜])(?!景|戏)/);
-    if (ioDnCombo) {
-      io = ioDnCombo[1]; dn = ioDnCombo[2];
-    } else {
-      if (/外景|室外|户外|EXT|外拍/i.test(headerLine)) io = '外';
-      if (/夜|晚|NIGHT|傍晚|凌晨/i.test(headerLine)) dn = '夜';
-    }
-
-    // 提取场景名
-    let cleanedHeader = headerLine
-      .replace(/[内外][日夜](?!景|戏)/g, '')
-      .replace(/外景|室内|室外|INT|EXT|DAY|NIGHT/gi, '')
-      .replace(/^[△▲●■▽▼○◆◇]\s*/, '')
-      .trim();
-
-    const headerWords = cleanedHeader.split(/[\s\s]+/).filter(Boolean);
-    mainLocation = headerWords[0] || '未知场景';
-    subLocation = headerWords[1] || '';
-
-    // 内容分析
-    const summaryLines = [];
-    const characters = new Set();
-    const minorChars = new Set();
-    const props = new Set();
-
-    for (let j = 1; j < Math.min(lines.length, 15); j++) {
-      const line = lines[j];
-      if (!line || line.length < 2) continue;
-
-      // 对白检测（更宽松）
-      const dialogMatch = line.match(/^([^\s：:（）()]{1,6})[：:]\s*(.+)/);
-      const actionMatch = line.match(/^([^\s：:（）()]{1,6})[（(]([^）)]+)[）)]/);
-
-      if (dialogMatch) {
-        const charName = dialogMatch[1];
-        if (!/^(第|场|场景|时间|地点|内|外|日|夜|INT|EXT|DAY|NIGHT)$/i.test(charName)) {
-          characters.add(charName);
-          if (summaryLines.length < 3) summaryLines.push('💬 ' + charName + '：' + dialogMatch[2].substring(0, 25));
-        }
-      } else if (actionMatch) {
-        const charName = actionMatch[1];
-        if (!/^(第|场|场景|时间|地点)$/.test(charName)) {
-          characters.add(charName);
-          if (summaryLines.length < 2) summaryLines.push(line.substring(0, 35));
-        }
-      } else if (line.length > 5 && summaryLines.length < 3) {
-        // 描述性文字
-        const cleanLine = line.replace(/^[△▲●■▽▼○◆◇]\s*/, '');
-        if (!/^[\(（\[【]/.test(cleanLine)) {
-          summaryLines.push(cleanLine.substring(0, 45));
-        }
+      let num, rest;
+      if (sceneMatch) {
+        num = sceneMatch[1];
+        rest = sceneMatch[2];
+      } else {
+        num = bareMatch[1];
+        rest = line.substring(bareMatch[0].length - 1); // 从中文开始
       }
 
-      // 道具检测（扩展）
-      const propPatterns = ['拿着','递给','掏出','打开','放在','取出','端起','放下','握着','背上','拖出','举起'];
-      propPatterns.forEach(verb => {
-        const m = line.match(new RegExp(verb + '([一-龥a-zA-Z0-9]{1,8})'));
-        if (m && m[1].length < 8) props.add(m[1]);
-      });
+      currentScene = {
+        id: Date.now() + parseInt(num) + i,
+        num: num,
+        headerLine: rest,
+        bodyLines: [],
+        mainLocation: '',
+        subLocation: '',
+        io: '内',
+        dn: '日'
+      };
+    } else if (currentScene) {
+      // 属于当前场的正文
+      currentScene.bodyLines.push(line);
+    }
+  }
+
+  // 最后一场
+  if (currentScene) finalizeScene(currentScene, scenes);
+
+  function finalizeScene(sc, arr) {
+    // 解析头部：提取场景名 + 内外 + 日夜
+    let header = sc.headerLine;
+    let io = '内', dn = '日';
+
+    // 提取 "日内" "夜外" "外夜" 等
+    const ioDn = header.match(/([内外])\s*([日夜])/);
+    if (ioDn) { io = ioDn[1]; dn = ioDn[2]; header = header.replace(ioDn[0], '').trim(); }
+
+    // 提取单独的内/外/日/夜标记
+    if (!ioDn) {
+      if (/外景|室外|户外|EXT/i.test(header)) io = '外';
+      if (/夜|晚|NIGHT|傍晚|凌晨/i.test(header)) dn = '夜';
+    }
+
+    // 提取场景名：取头部前几个词作为主场景/次场景
+    const words = header.split(/[\s\s]+/).filter(Boolean);
+    const mainLocation = words[0] || '场景' + sc.num;
+    const subLocation = words[1] || '';
+
+    // 内容梗概：取正文前2行
+    const bodyText = sc.bodyLines.join(' ');
+    const summary = bodyText.substring(0, 60) || header;
+
+    // 角色检测
+    const characters = new Set();
+    const allText = sc.bodyLines.join('\n');
+    const dialogMatches = allText.matchAll(/^([^\s：:（）()\d]{1,8})[：:]/gm);
+    for (const m of dialogMatches) {
+      const name = m[1].trim();
+      if (name && !/^(INT|EXT|DAY|NIGHT|第|场|场景|内|外|日|夜)$/i.test(name)) {
+        characters.add(name);
+      }
     }
 
     // 页数
-    const charCount = content.replace(/[\s\n]/g, '').length;
+    const charCount = (header + allText).replace(/[\s\n]/g, '').length;
     const pages = Math.max(0.5, Math.round(charCount / 200 * 2) / 2);
 
-    // 次要角色
-    const allText = content;
-    const titlePattern = /(?:走进|路过|出现|进来|出去|推门|推门进来|正好|突然|这时)[^。！？\n]{2,20}(?:[A-Z一-鿿]{2,4})(?:站|说|看|笑|走|坐|拿|递|打|开|关|来到)/g;
-    const foundNames = new Set();
-    let m;
-    while ((m = titlePattern.exec(allText)) !== null) {
-      const nameMatch = m[0].match(/([一-鿿]{2,4})(?:站|说|看|笑|走|坐|拿|递|打|开|关|来到|：|:)/);
-      if (nameMatch && !characters.has(nameMatch[1])) foundNames.add(nameMatch[1]);
-    }
-    minorChars.forEach(c => foundNames.add(c)); // 保留之前的检测结果
-
-    // 服装检测
-    const costumePattern = /穿[着上]|披[着上]|戴[着上]|身[着穿]/g;
-    const foundCostumes = new Set();
-    while ((m = costumePattern.exec(allText)) !== null) {
-      const rest = allText.substring(m.index + m[0].length).substring(0, 15).match(/^([^，。！？\n]{1,10})/);
-      if (rest) foundCostumes.add(rest[1].replace(/[了的]/, ''));
-    }
-
-    if (!summaryLines.length) summaryLines.push(content.substring(0, 45));
-
-    scenes.push({
-      id: Date.now() + parseInt(num) + Math.random() * 100,
-      num: num,
+    arr.push({
+      id: sc.id,
+      num: sc.num,
       mainLocation: mainLocation,
       subLocation: subLocation,
       io: io,
       dn: dn,
-      summary: summaryLines.join('；'),
+      summary: summary,
       pages: pages,
       mainChars: Array.from(characters).join('、'),
-      minorChars: Array.from(foundNames).join('、'),
-      props: Array.from(props).join('、'),
-      costumes: Array.from(foundCostumes).join('、'),
+      minorChars: '',
+      props: '',
+      costumes: '',
       remark: '',
       assignedDay: null
     });
