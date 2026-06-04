@@ -101,75 +101,113 @@ async function analyzeScript() {
 }
 
 // ============================================
-// AI只做增强 —— 不改结构，只润色摘要+补道具服装
+// AI增强 —— 逐场使用专业影视制片prompt
 // ============================================
 async function aiEnhanceScenes(scenes) {
-  // 只发摘要和原文给AI，让AI做两件事：优化summary，提取props/costumes
-  const inputForAI = scenes.map(s => ({
-    num: s.num,
-    location: s.location,
-    io: s.io,
-    dn: s.dn,
-    mainChars: s.mainChars,
-    text: s.rawText?.substring(0, 200)
-  }));
+  // 分批处理，每批最多5场
+  const batchSize = 5;
+  const results = [];
 
-  const resp = await fetch('https://api.deepseek.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + dsApiKey },
-    body: JSON.stringify({
-      model: 'deepseek-chat',
-      messages: [
-        { role: 'system', content: `你是剧本润色助手。场次结构（场号/场景/内外/日夜/角色）已确定且不可修改。
+  for (let i = 0; i < scenes.length; i += batchSize) {
+    const batch = scenes.slice(i, i + batchSize);
+    const statusEl = document.getElementById('script-status');
+    if (statusEl) statusEl.textContent = '🤖 AI增强 ' + (i+1) + '/' + scenes.length + '...';
 
-你的任务只是：
-1. 为每场写一句15字以内的内容概要
-2. 提取实物道具（手机、钥匙、雨伞、文件等名词）
-3. 提取特殊服装（旗袍、西装、校服等）
+    try {
+      const enhanced = await enhanceBatch(batch);
+      results.push(...enhanced);
+    } catch(e) {
+      console.log('批次增强失败，保留本地结果', e);
+      results.push(...batch);
+    }
+  }
 
-返回JSON数组，只包含这三个字段：
-[{"num":"场号","summary":"梗概","props":"道具","costumes":"服装"}]
-
-不要修改角色名、不要添加角色、不要改场景名。` },
-        { role: 'user', content: JSON.stringify(inputForAI) }
-      ],
-      temperature: 0.1,
-      max_tokens: 2000
-    })
-  });
-
-  if (!resp.ok) throw new Error('API error');
-
-  const data = await resp.json();
-  const content = data.choices?.[0]?.message?.content || '';
-  const jsonMatch = content.match(/\[[\s\S]*\]/);
-  if (!jsonMatch) throw new Error('Bad format');
-
-  const enhancements = JSON.parse(jsonMatch[0]);
-
-  // 合并增强结果到场景
-  const enhMap = {};
-  enhancements.forEach(e => { enhMap[String(e.num)] = e; });
+  // 合并：保留本地结构，AI只更新摘要/道具/服装
+  const enhancedMap = {};
+  results.forEach(r => { enhancedMap[String(r.num)] = r; });
 
   return scenes.map(s => {
-    const enh = enhMap[String(s.num)] || {};
+    const enh = enhancedMap[String(s.num)] || {};
     return {
       ...s,
       summary: enh.summary || s.summary,
-      props: filterBadWords(enh.props || s.props || ''),
-      costumes: filterBadWords(enh.costumes || s.costumes || '')
+      props: enh.props || s.props,
+      costumes: enh.costumes || s.costumes,
+      minorChars: enh.minorChars || s.minorChars,
+      remark: enh.remark || s.remark
     };
   });
 }
 
-function filterBadWords(str) {
-  return (str||'').split(/[\s、，,]+/).filter(w => {
-    const c = w.trim();
-    if (!c || c.length > 10) return false;
-    if (/^(镜头|远景|近景|特写|中景|全景|跟拍|移动|入画|出画|画外|OS|VO|旁白|较远|较近|切换|淡入|淡出|杭州话|上海话|粤语|东北话|哭泣|笑声|微笑)$/.test(c)) return false;
-    if (/^[的了着过在是很非常十分]$/.test(c)) return false;
-    return true;
-  }).join(' ');
+function buildPerScenePrompt(scene) {
+  return `# Role
+你是一个极其严谨、精通影视工业化流程的专业电影制片助理。你的任务是将单场剧本拆解为结构化的顺场表要素。
+
+# Rules
+1. 提取【主场景】（地点名，如江边、家内餐桌）
+2. 提炼【内容梗概】：一句话概括本场戏剧事件，60字以内
+3. 【道具提取】：只提取画面中明确出现、演员需要交互或持有的实物（如白色帆布包、手机、杯子）
+   - 严禁泛化！严禁把"风景""光线""情绪"误判为道具
+   - 如果文字中没有实物道具，道具字段留空数组[]
+4. 【次要角色提取】：有出场但无台词的路人/配角（如路人、保安、服务员）
+5. 【服装提取】：特殊服装描述（如旗袍、西装、校服），普通服装不用提
+
+# 本场已确定信息（不可修改）
+- 场号: ${scene.num}
+- 场景: ${scene.location}
+- 内外: ${scene.io}
+- 日夜: ${scene.dn}
+- 主要角色(已从对白提取): ${scene.mainChars || '无'}
+
+# 剧本原文
+${scene.rawText?.substring(0, 500)}
+
+# 输出
+只返回JSON，不要任何解释：
+{"num":"${scene.num}","summary":"梗概","minorChars":["次要角色"],"props":["道具"],"costumes":["服装"],"remark":""}`;
+}
+
+async function enhanceBatch(batch) {
+  // 逐场调用API以确保精准
+  const results = [];
+  for (const scene of batch) {
+    const prompt = buildPerScenePrompt(scene);
+    try {
+      const resp = await fetch('https://api.deepseek.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + dsApiKey },
+        body: JSON.stringify({
+          model: 'deepseek-chat',
+          messages: [
+            { role: 'user', content: prompt }
+          ],
+          temperature: 0.1,
+          max_tokens: 500
+        })
+      });
+      if (!resp.ok) throw new Error('API error');
+      const data = await resp.json();
+      const content = data.choices?.[0]?.message?.content || '';
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        // 清理
+        results.push({
+          num: scene.num,
+          summary: (parsed.summary || '').substring(0, 60),
+          minorChars: Array.isArray(parsed.minorChars) ? parsed.minorChars.join(' ') : (parsed.minorChars || ''),
+          props: Array.isArray(parsed.props) ? parsed.props.join(' ') : (parsed.props || ''),
+          costumes: Array.isArray(parsed.costumes) ? parsed.costumes.join(' ') : (parsed.costumes || ''),
+          remark: (parsed.remark || '')
+        });
+      } else {
+        results.push(scene);
+      }
+    } catch(e) {
+      results.push(scene); // 单场失败不阻塞
+    }
+  }
+  return results;
 }
 
 function parseScript(text) {
