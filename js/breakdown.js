@@ -141,30 +141,43 @@ async function aiEnhanceScenes(scenes) {
 
 function buildPerScenePrompt(scene) {
   return `# Role
-你是一个极其严谨、精通影视工业化流程的专业电影制片助理。你的任务是将单场剧本拆解为结构化的顺场表要素。
+你是一位极其严谨、拥有10年以上院线电影筹备经验的专业电影制片统筹（Script Supervisor）。你的任务是严格按照中国影视制片工业化标准，对以下给出的【单场剧本文本】进行要素拆解。
 
-# Rules
-1. 提取【主场景】（地点名，如江边、家内餐桌）
-2. 提炼【内容梗概】：一句话概括本场戏剧事件，60字以内
-3. 【道具提取】：只提取画面中明确出现、演员需要交互或持有的实物（如白色帆布包、手机、杯子）
-   - 严禁泛化！严禁把"风景""光线""情绪"误判为道具
-   - 如果文字中没有实物道具，道具字段留空数组[]
-4. 【次要角色提取】：有出场但无台词的路人/配角（如路人、保安、服务员）
-5. 【服装提取】：特殊服装描述（如旗袍、西装、校服），普通服装不用提
+# Workflow & Critical Rules
+1. 【严格的单场限制】：你只处理当前给出的这一场戏，绝对不要脑补或结合前后场次的内容。
+2. 【内容梗概提取规范】：用一句话概括本场发生的"戏剧动作核心事件"（Who does what），字数控制在50字以内。严禁描写文学化意境。
+3. 【主要角色提取规范】：
+   - 必须是本场有台词（包括O.S.画外音）、或在动作描写中有明确出场、且对剧情有推动作用的实体角色。
+   - 严禁提取剧本台词中"提及"但实际没有肉身到场的角色。
+4. 【次要角色/群众演员提取规范】：
+   - 剧本中出现的"路人男性"、"年轻人"、"小伙子"如果指的是同一个人，必须统一归类合并为【路人男性】，并在备注中说明。
+   - 骑自行车的人、跑步的人属于背景群众（环境背景），归类为【次要角色/群演】。
+5. 【制片级道具提取规范（最核心）】：
+   - 必须是画面中角色【正在使用、持有、交付、或产生直接交互】的实体物品（例如：白色帆布包、三明治、保温杯、矿泉水、手机、相册、照片）。
+   - 严禁将大自然环境（如：江水、山河、阳光、风、雨水、树木）识别为道具。
+   - 严禁将服装配饰（如：衣服、绿色的头发）在没有特殊交互的情况下识别为道具。
 
-# 本场已确定信息（不可修改）
+# 本场已确定信息（来自精确解析器，不可修改）
 - 场号: ${scene.num}
-- 场景: ${scene.location}
+- 主场景: ${scene.location}
 - 内外: ${scene.io}
 - 日夜: ${scene.dn}
-- 主要角色(已从对白提取): ${scene.mainChars || '无'}
+- 已提取主要角色(从对白行XXX：捕获): ${scene.mainChars || '无'}
 
-# 剧本原文
-${scene.rawText?.substring(0, 500)}
+# 剧本原文（仅本场）
+${scene.rawText?.substring(0, 600)}
 
-# 输出
-只返回JSON，不要任何解释：
-{"num":"${scene.num}","summary":"梗概","minorChars":["次要角色"],"props":["道具"],"costumes":["服装"],"remark":""}`;
+# 输出格式
+严格按以下JSON输出，只返回JSON，不要任何其它文字：
+{
+  "num": "${scene.num}",
+  "summary": "50字内梗概",
+  "mainChars": ["${(scene.mainChars||'').split(/[\s、,]+/).filter(Boolean).join('","')}"],
+  "minorChars": ["次要角色名（有则填，无则为空数组）"],
+  "props": ["道具名"],
+  "costumes": ["特殊服装"],
+  "remark": "备注"
+}`;
 }
 
 async function enhanceBatch(batch) {
@@ -191,14 +204,15 @@ async function enhanceBatch(batch) {
       const jsonMatch = content.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
-        // 清理
+        // 清理 — AI返回可能为数组或字符串
+        const arr = (v) => Array.isArray(v) ? v.join(' ') : (typeof v === 'string' ? v : '');
         results.push({
           num: scene.num,
-          summary: (parsed.summary || '').substring(0, 60),
-          minorChars: Array.isArray(parsed.minorChars) ? parsed.minorChars.join(' ') : (parsed.minorChars || ''),
-          props: Array.isArray(parsed.props) ? parsed.props.join(' ') : (parsed.props || ''),
-          costumes: Array.isArray(parsed.costumes) ? parsed.costumes.join(' ') : (parsed.costumes || ''),
-          remark: (parsed.remark || '')
+          summary: (parsed.synopsis || parsed.summary || '').substring(0, 55),
+          minorChars: arr(parsed.minorChars || parsed.minor_characters || ''),
+          props: arr(parsed.props || ''),
+          costumes: arr(parsed.costumes || parsed.costume_notes || ''),
+          remark: (parsed.remark || parsed.remarks || '')
         });
       } else {
         results.push(scene);
