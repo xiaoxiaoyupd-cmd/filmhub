@@ -108,30 +108,55 @@ async function analyzeScript() {
 // DeepSeek AI 剧本分析
 // ============================================
 async function aiAnalyzeScript(scriptText) {
-  const systemPrompt = `你是一个专业的影视剧本分析AI。请分析以下剧本，提取每一场戏的结构化信息。
+  const systemPrompt = `你是专业影视剧本分析师。请严格按照以下规范提取场次信息。
 
-返回纯JSON数组（不要任何其他文字），每个元素格式：
+## 输出格式
+返回纯JSON数组，每个元素：
 {
-  "num": "原剧本中的场次编号",
-  "location": "场景地点名称（纯地点，不要含内/外/日/夜标记）",
-  "io": "内或外",
-  "dn": "日或夜",
-  "pages": 页数(数字，按中文剧本每180字≈1页估算),
-  "summary": "15字以内的内容梗概",
-  "mainChars": "主要角色(空格分隔)",
-  "minorChars": "次要角色(空格分隔)",
-  "props": "关键道具(空格分隔)",
-  "costumes": "服装描述(空格分隔)",
-  "remark": "备注",
-  "rawText": "该场原文(截取前150字)"
+  "num": "场次编号(原剧本数字)",
+  "location": "场景地点(只要地点名，不含内外日夜标记。如'妈妈家客厅'而非'妈妈家客厅 夜内')",
+  "io": "内/外",
+  "dn": "日/夜",
+  "pages": 数字页数(每180中文字≈1页，最少0.5),
+  "summary": "该场内容梗概(15字以内，概括动作和事件，不要角色名)",
+  "mainChars": "有对白或重要动作的角色名(空格分隔)",
+  "minorChars": "只出现、无对白的次要角色(空格分隔)",
+  "props": "关键实体道具名词(空格分隔，空字符串表示无)",
+  "costumes": "特殊服装(空格分隔，无特殊服装则空字符串)",
+  "remark": "备注(空字符串或简短标注)",
+  "rawText": "该场原文前150字"
 }
 
-规则：
-1. 场景名只保留地点，如"张三的卧室"不要写成"张三卧室日内"
-2. 页数按字数/180估算，最少0.5页
-3. 角色从对白(XX：)和动作描述(XX（)中提取
-4. 道具从动作描述中提取(拿着/递给/掏出/放在等动词后的名词)
-5. 保持原剧本的场次编号，不要重新编号`;
+## ⚠️ 严禁事项（重要！）
+❌ 绝对不要将以下内容识别为角色名：
+  - 方言标注（杭州话、上海话、粤语、东北话等）→ 这些是语言标注，不是人！
+  - 镜头术语（镜头一、远景、近景、特写、跟拍、移动等）
+  - 位置描述（较远的位置、入画、出画、背景中）
+  - 道具名称（手机、杯子、文件等）→ 这些归入props字段
+  - 单字词、数字、标点
+
+❌ props只记录实物道具，不要记录：
+  - 情绪/状态（哭泣、笑声）
+  - 动词（走、跑、跳）
+  - 抽象概念（时间、想法）
+  - 自然现象（阳光、雨、风）除非特殊（如"暴雨""台风"）
+
+## 角色识别规则
+✅ 只有以下才算角色：
+  1. 对白行开头 "XXX：" 的XXX（2-4字中文名或称呼，如'妈妈''女儿''王总''李四'）
+  2. 动作描述 "XXX（表情/动作）" 的XXX
+  3. 被其他角色提及、且在当前场有出场的人物
+
+## 道具识别规则
+✅ 只有以下才算道具：
+  - 实物名词：手机、钥匙、杯子、文件、照片、雨伞、行李箱...
+  - 人物"拿着/递给/掏出/放在/打开"之后的宾语
+  - 场景描述中明确出现的物品
+
+## 场景名提取规则
+  - "15 妈妈家客厅 日内" → location:"妈妈家客厅" io:"内" dn:"日"
+  - "3 街道 夜外" → location:"街道" io:"外" dn:"夜"
+  - 去掉所有镜头术语和位置描述`;
 
   const resp = await fetch('https://api.deepseek.com/v1/chat/completions', {
     method: 'POST',
@@ -140,10 +165,10 @@ async function aiAnalyzeScript(scriptText) {
       model: 'deepseek-chat',
       messages: [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: '请分析以下剧本：\n\n' + scriptText.substring(0, 15000) }
+        { role: 'user', content: '分析剧本：\n\n' + scriptText.substring(0, 15000) }
       ],
-      temperature: 0.2,
-      max_tokens: 4000
+      temperature: 0.1,
+      max_tokens: 6000
     })
   });
 
@@ -154,28 +179,50 @@ async function aiAnalyzeScript(scriptText) {
 
   const data = await resp.json();
   const content = data.choices?.[0]?.message?.content || '';
-  // 提取JSON数组
+
+  // 提取JSON
   const jsonMatch = content.match(/\[[\s\S]*\]/);
-  if (!jsonMatch) throw new Error('AI返回格式异常: ' + content.substring(0, 80));
+  if (!jsonMatch) throw new Error('AI返回格式异常');
 
   let scenes = JSON.parse(jsonMatch[0]);
-  // 补全字段
-  scenes = scenes.map((s, i) => ({
-    id: Date.now() + i + Math.random() * 100,
-    num: String(s.num || (i+1)),
-    location: s.location || '场景' + (i+1),
-    io: s.io || '内',
-    dn: s.dn || '日',
-    pages: parseFloat(s.pages) || 1,
-    summary: s.summary || '',
-    mainChars: s.mainChars || '',
-    minorChars: s.minorChars || '',
-    props: s.props || '',
-    costumes: s.costumes || '',
-    remark: s.remark || '',
-    rawText: s.rawText || '',
-    assignedDay: null
-  }));
+
+  // ===== 后处理过滤 =====
+  const BANNED_CHARS = /^(杭州话|上海话|粤语|东北话|四川话|广东话|闽南话|普通话|方言|镜头|远景|近景|特写|中景|全景|跟拍|移动|入画|出画|画外|OS|VO|旁白|背景|前景|空镜|字幕|较远|较近|远处|近处|位置|角度|切换|淡入|淡出|转场|切至|叠化)$/;
+  const BANNED_PROPS = /^(较|远|近|处|点|下|来|去|过|了|的|着|在|是|很|非常|十分|大概|可能|应该|似乎|仿佛|像|好像|一样|一般|这种|那种|某种|什么|怎么|为什么|为何|何时|何地|如何|怎样|哭泣|笑声|微笑|叹息|沉默|安静|喧嚣|嘈杂|沉闷|轻松|紧张|害怕|恐惧|喜悦|悲伤|愤怒|高兴)$/;
+
+  scenes = scenes.map((s, i) => {
+    // 过滤角色
+    let mainChars = (s.mainChars || '').split(/[\s、，,]+/).filter(c => {
+      const clean = c.trim();
+      return clean.length >= 2 && clean.length <= 5 && !BANNED_CHARS.test(clean) && !/^\d+$/.test(clean);
+    }).join(' ');
+
+    let minorChars = (s.minorChars || '').split(/[\s、，,]+/).filter(c => {
+      const clean = c.trim();
+      return clean.length >= 2 && clean.length <= 5 && !BANNED_CHARS.test(clean) && !/^\d+$/.test(clean);
+    }).join(' ');
+
+    // 过滤道具
+    let props = (s.props || '').split(/[\s、，,]+/).filter(p => {
+      const clean = p.trim();
+      return clean.length >= 1 && clean.length <= 8 && !BANNED_PROPS.test(clean) && !/^\d+$/.test(clean) && !/^[的了着过在是]$/.test(clean);
+    }).join(' ');
+
+    return {
+      id: Date.now() + i + Math.random() * 100,
+      num: String(s.num || (i+1)),
+      location: (s.location || '场景'+(i+1)).replace(/[内外][日夜](?!景|戏)/g, '').replace(/镜头|远景|近景|特写|中景|切换|淡入|淡出|转场|切至/g, '').trim(),
+      io: ['内','外'].includes(s.io) ? s.io : '内',
+      dn: ['日','夜'].includes(s.dn) ? s.dn : '日',
+      pages: Math.max(0.5, parseFloat(s.pages) || 1),
+      summary: (s.summary || '').replace(/镜头|远景|近景|特写|中景/g, '').substring(0, 30),
+      mainChars, minorChars, props,
+      costumes: (s.costumes || '').replace(/镜头|远景|近景|特写/g, '').trim(),
+      remark: (s.remark || '').replace(/杭州话|上海话|粤语|东北话|方言/g, '').trim(),
+      rawText: s.rawText || '',
+      assignedDay: null
+    };
+  });
 
   return scenes;
 }
