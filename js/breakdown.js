@@ -393,118 +393,272 @@ function sendConfirmCmd() {
 
   const sc = AppBreakdown.scenes;
   let reply = '';
+  let matched = false;
 
-  // "主角是 XXX 和 YYY" / "主要角色是 XXX"
-  const mainCharMatch = cmd.match(/(?:主角|主要角色|主演)[是：:有]\s*(.+)/);
-  if (mainCharMatch) {
-    const names = mainCharMatch[1].split(/[、，,和\s]+/).filter(Boolean);
-    sc.forEach(s => {
-      if (!s.mainChars) s.mainChars = '';
-      names.forEach(n => { if (!s.mainChars.includes(n)) s.mainChars += ' ' + n; });
-      s.mainChars = s.mainChars.trim();
-    });
-    refreshConfirmInputs();
-    reply = '✅ 已将所有场次的主要角色设为：' + names.join('、');
+  // ── 便捷：确认 ──
+  if (/^(确认|OK|ok|好了|行|没问题|可以|就这样)$/.test(cmd)) {
+    saveBreakdownData(); confirmAllScenes(); return;
   }
 
-  // "配角是 XXX" / "次要角色是 XXX"
-  else if (cmd.match(/(?:配角|次要角色)[是：:有]\s*(.+)/)) {
-    const m = cmd.match(/(?:配角|次要角色)[是：:有]\s*(.+)/);
-    const names = m[1].split(/[、，,和\s]+/).filter(Boolean);
-    sc.forEach(s => {
-      if (!s.minorChars) s.minorChars = '';
-      names.forEach(n => { if (!s.minorChars.includes(n)) s.minorChars += ' ' + n; });
-      s.minorChars = s.minorChars.trim();
-    });
-    refreshConfirmInputs();
-    reply = '✅ 已将所有场次的次要角色设为：' + names.join('、');
-  }
+  // ── 自然语言理解引擎 ──
 
-  // "第X场 XXX"
-  else if (cmd.match(/第\s*(\d+)\s*场/)) {
-    const sceneCmd = cmd.replace(/第\s*(\d+)\s*场\s*/, '');
-    const num = cmd.match(/第\s*(\d+)\s*场/)[1];
-    const scene = sc.find(s => s.num === num);
-    if (!scene) { reply = '❌ 没找到场' + num; }
-    else {
-      if (sceneCmd.includes('夜')) { scene.dn = '夜'; reply = '✅ 场' + num + ' 改为夜戏'; }
-      if (sceneCmd.includes('日')) { scene.dn = '日'; }
-      if (sceneCmd.includes('外')) { scene.io = '外'; reply = (reply||'✅') + ' 场' + num + ' 改为外景'; }
-      if (sceneCmd.includes('内')) { scene.io = '内'; }
-      const addChar = sceneCmd.match(/(?:角色|加)[：:\s]*([^\s，。]+)/);
-      if (addChar) {
-        scene.mainChars = scene.mainChars ? scene.mainChars + ' ' + addChar[1] : addChar[1];
-        reply = '✅ 场' + num + ' 添加角色：' + addChar[1];
-      }
-      const addProp = sceneCmd.match(/(?:道具|加)[：:\s]*([^\s，。]+)/);
-      if (addProp && !addChar) {
-        scene.props = scene.props ? scene.props + ' ' + addProp[1] : addProp[1];
-        reply = '✅ 场' + num + ' 添加道具：' + addProp[1];
-      }
-      const locMatch = sceneCmd.match(/(?:场景|地点)[：:\s]*([^\s，。]{2,10})/);
-      if (locMatch) { scene.location = locMatch[1]; reply = '✅ 场' + num + ' 场景改为：' + locMatch[1]; }
-      refreshConfirmInputs();
-    }
-  }
+  // 1. 提取场次号（如果有）
+  const sceneNumMatch = cmd.match(/第\s*(\d+)\s*场/);
+  const targetScene = sceneNumMatch ? sc.find(s => s.num === sceneNumMatch[1]) : null;
 
-  // "所有XXX改成YYY"
-  else if (cmd.match(/所有\s*"?([^\s"]+)"?\s*[改换]\s*(?:成|为)?\s*"?([^\s"]+)"?/)) {
-    const m = cmd.match(/所有\s*"?([^\s"]+)"?\s*[改换]\s*(?:成|为)?\s*"?([^\s"]+)"?/);
-    const from = m[1], to = m[2];
-    let cnt = 0;
-    sc.forEach(s => {
-      ['location','summary','mainChars','minorChars','props','costumes','remark'].forEach(f => {
-        if (s[f] && s[f].includes(from)) { s[f] = s[f].replace(new RegExp(from, 'g'), to); cnt++; }
+  // 2. 提取角色名（中文2-3字+可能跟在"角色"/"演员"后面、"是"/"有"后面）
+  const namedEntities = extractNames(cmd); // 提取所有可能的人名/物品名
+
+  // 3. 意图识别
+
+  // "主角/主要角色 是/只有/应该是 XXX"
+  if (/主角|主要角色|主演/.test(cmd) && /是|只有|有|应该|包括/.test(cmd)) {
+    let names = [];
+    // 提取"是XXX"后面的内容
+    const afterIs = cmd.match(/(?:是|只有|有|应该|包括)[：:\s]*(.+)/);
+    if (afterIs) names = afterIs[1].split(/[、，,和\s与跟及]+/).filter(Boolean).filter(n => n.length <= 4);
+    if (!names.length) names = namedEntities;
+
+    if (targetScene) {
+      // 只改特定场
+      targetScene.mainChars = [...new Set([...(targetScene.mainChars||'').split(/[\s、,]+/).filter(Boolean), ...names])].join(' ');
+      reply = '✅ 场' + targetScene.num + ' 主角加上：' + names.join('、');
+    } else {
+      // 全部场
+      sc.forEach(s => {
+        if (!s.mainChars) s.mainChars = '';
+        names.forEach(n => { if (!s.mainChars.includes(n)) s.mainChars += ' ' + n; });
+        s.mainChars = s.mainChars.trim();
       });
-    });
-    refreshConfirmInputs();
-    reply = '✅ 已将 ' + cnt + ' 处 "' + from + '" 改为 "' + to + '"';
+      reply = '✅ 全部场次主角加上：' + names.join('、');
+    }
+    refreshConfirmInputs(); matched = true;
   }
 
-  // "加道具XXX" → 全部场次
-  else if (cmd.match(/[加添]\s*道具\s*(.+)/)) {
-    const m = cmd.match(/[加添]\s*道具\s*(.+)/);
-    const prop = m[1].trim();
-    sc.forEach(s => { s.props = s.props ? s.props + ' ' + prop : prop; });
-    refreshConfirmInputs();
-    reply = '✅ 已为所有场次添加道具：' + prop;
+  // "配角/次要角色 是..."
+  else if (/配角|次要角色/.test(cmd) && /是|只有|有|应该|包括/.test(cmd)) {
+    const afterIs = cmd.match(/(?:是|只有|有|应该|包括)[：:\s]*(.+)/);
+    let names = afterIs ? afterIs[1].split(/[、，,和\s与跟及]+/).filter(Boolean).filter(n => n.length <= 4) : namedEntities;
+    if (targetScene) {
+      targetScene.minorChars = [...new Set([...(targetScene.minorChars||'').split(/[\s、,]+/).filter(Boolean), ...names])].join(' ');
+      reply = '✅ 场' + targetScene.num + ' 配角加上：' + names.join('、');
+    } else {
+      sc.forEach(s => {
+        if (!s.minorChars) s.minorChars = '';
+        names.forEach(n => { if (!s.minorChars.includes(n)) s.minorChars += ' ' + n; });
+        s.minorChars = s.minorChars.trim();
+      });
+      reply = '✅ 全部场次配角加上：' + names.join('、');
+    }
+    refreshConfirmInputs(); matched = true;
   }
 
-  // "加服装XXX"
-  else if (cmd.match(/[加添]\s*服装\s*(.+)/)) {
-    const m = cmd.match(/[加添]\s*服装\s*(.+)/);
-    const costume = m[1].trim();
-    sc.forEach(s => { s.costumes = s.costumes ? s.costumes + ' ' + costume : costume; });
-    refreshConfirmInputs();
-    reply = '✅ 已为所有场次添加服装：' + costume;
-  }
-
-  // "第X场服装XXX"
-  else if (cmd.match(/第\s*(\d+)\s*场\s*服装/)) {
-    const num = cmd.match(/第\s*(\d+)\s*场\s*服装\s*(.+)/);
-    if (num) {
-      const scene = sc.find(s => s.num === num[1]);
-      if (scene) {
-        scene.costumes = scene.costumes ? scene.costumes + ' ' + num[2] : num[2];
-        refreshConfirmInputs();
-        reply = '✅ 场' + num[1] + ' 服装设为：' + num[2];
-      }
+  // "主题/题材 是 XXX" → 全部场次内容梗概补充
+  else if (/主题|题材|基调|风格/.test(cmd) && /是|为|属于/.test(cmd)) {
+    const m = cmd.match(/(?:是|为|属于)[：:\s]*(.+)/);
+    if (m) {
+      sc.forEach(s => { s.remark = (s.remark||'') + ' 主题:' + m[1].trim(); });
+      refreshConfirmInputs();
+      reply = '✅ 已标注主题：' + m[1].trim();
+      matched = true;
     }
   }
 
-  // "确认" → 触发确认
-  else if (cmd.match(/^(确认|OK|ok|好了|行|没问题)$/)) {
-    saveBreakdownData();
-    confirmAllScenes();
-    return;
+  // "场景/地点 应该/是 XXX" → 改全部或特定场的场景名
+  else if (/场景|地点|位置/.test(cmd) && /是|应该|改|换成/.test(cmd)) {
+    const m = cmd.match(/(?:是|应该|改|换成)[：:\s]*(.+)/);
+    if (m) {
+      const newLoc = m[1].replace(/[了吧呢啊]$/,'').trim();
+      if (targetScene) {
+        targetScene.location = newLoc;
+        reply = '✅ 场' + targetScene.num + ' 场景改为：' + newLoc;
+      } else {
+        reply = '💡 请指定场次，如"第3场场景是客厅"';
+        // 智能猜测：如果只有1个场景地，全改
+        const locs = new Set(sc.map(s => s.location));
+        if (locs.size <= 2) {
+          sc.forEach(s => { s.location = newLoc; });
+          reply = '✅ 全部场景改为：' + newLoc;
+        }
+      }
+      refreshConfirmInputs(); matched = true;
+    }
   }
 
-  else {
-    reply = '🤔 试试这样说：<br>· "主角是妈妈和女儿"<br>· "第3场夜外"<br>· "加道具手机"<br>· "所有张三改成张总"<br>· "加服装旗袍"<br>· "确认"';
+  // "不对/不是/应该/改成" → 纠错模式
+  else if (/不对|不是|错了|应该是|改成|改为/.test(cmd)) {
+    // 尝试理解用户在纠正什么
+    // "不对，XXX应该是YYY"
+    const correctMatch = cmd.match(/(?:不是|应该是|改成|改为)[：:\s]*(.+)/);
+    if (correctMatch) {
+      const rest = correctMatch[1];
+
+      // "XXX应该是YYY"
+      const rMatch = rest.match(/(.+?)(?:应该)?(?:是|为|改成)(.+)/);
+      if (rMatch) {
+        const from = rMatch[1].trim(), to = rMatch[2].trim();
+        let cnt = 0;
+        sc.forEach(s => {
+          ['location','summary','mainChars','minorChars','props','costumes','remark'].forEach(f => {
+            if (s[f] && s[f].includes(from)) { s[f] = s[f].replace(new RegExp(from,'g'), to); cnt++; }
+          });
+        });
+        refreshConfirmInputs();
+        reply = cnt ? '✅ 已将所有 "' + from + '" 改为 "' + to + '"（' + cnt + '处）'
+                    : '🤔 没找到 "' + from + '"，它出现在哪一场？试试"第X场' + from + '改成' + to + '"';
+        matched = true;
+      }
+    }
+
+    // "不对，第X场应该是..."
+    if (!matched && targetScene && /应该是|改成|不对/.test(cmd)) {
+      const after = cmd.replace(/.*?(?:应该是|改成|不对)[，,\s]*/, '');
+      // 尝试解析
+      if (/夜/.test(after)) { targetScene.dn = '夜'; reply = '✅ 场' + targetScene.num + ' 改为夜戏'; matched = true; }
+      if (/日/.test(after)) { targetScene.dn = '日'; }
+      if (/外/.test(after)) { targetScene.io = '外'; reply = (reply||'✅') + ' 场' + targetScene.num + ' 外景'; }
+      if (/内/.test(after)) { targetScene.io = '内'; }
+      if (matched) refreshConfirmInputs();
+    }
+  }
+
+  // 第X场 具体修改
+  if (!matched && targetScene) {
+    const rest = cmd.replace(/第\s*\d+\s*场\s*/, '');
+    if (/夜/.test(rest)) { targetScene.dn = '夜'; reply = '✅ 场' + targetScene.num + ' → 夜戏'; matched = true; }
+    else if (/日/.test(rest)) { targetScene.dn = '日'; reply = '✅'; matched = true; }
+    if (/外/.test(rest)) { targetScene.io = '外'; reply = (reply||'✅') + ' 场' + targetScene.num + ' → 外景'; matched = true; }
+    else if (/内/.test(rest)) { targetScene.io = '内'; reply = (reply||'✅'); matched = true; }
+
+    const locM = rest.match(/(?:场景|地点|改成|改为)[：:\s]*([^\s，。]{2,10})/);
+    if (locM) { targetScene.location = locM[1]; reply = '✅ 场' + targetScene.num + ' 场景 → ' + locM[1]; matched = true; }
+
+    const addCM = rest.match(/(?:加|增加|添|添加)\s*角色\s*([^\s，。]+)/);
+    if (addCM) {
+      targetScene.mainChars = targetScene.mainChars ? targetScene.mainChars + ' ' + addCM[1] : addCM[1];
+      reply = '✅ 场' + targetScene.num + ' 加角色：' + addCM[1]; matched = true;
+    }
+
+    const addPM = rest.match(/(?:加|增加|添|添加)\s*道具\s*([^\s，。]+)/);
+    if (addPM) {
+      targetScene.props = targetScene.props ? targetScene.props + ' ' + addPM[1] : addPM[1];
+      reply = '✅ 场' + targetScene.num + ' 加道具：' + addPM[1]; matched = true;
+    }
+
+    const addCstM = rest.match(/(?:加|增加|添|添加)\s*服装\s*([^\s，。]+)/);
+    if (addCstM) {
+      targetScene.costumes = targetScene.costumes ? targetScene.costumes + ' ' + addCstM[1] : addCstM[1];
+      reply = '✅ 场' + targetScene.num + ' 加服装：' + addCstM[1]; matched = true;
+    }
+
+    if (matched) refreshConfirmInputs();
+  }
+
+  // 全局 "加道具/服装 XXX"
+  if (!matched) {
+    const gProp = cmd.match(/^[加添]\s*道具\s*(.+)/);
+    if (gProp) {
+      sc.forEach(s => { s.props = s.props ? s.props + ' ' + gProp[1] : gProp[1]; });
+      refreshConfirmInputs(); reply = '✅ 全部场次加道具：' + gProp[1]; matched = true;
+    }
+    const gCost = cmd.match(/^[加添]\s*服装\s*(.+)/);
+    if (gCost) {
+      sc.forEach(s => { s.costumes = s.costumes ? s.costumes + ' ' + gCost[1] : gCost[1]; });
+      refreshConfirmInputs(); reply = '✅ 全部场次加服装：' + gCost[1]; matched = true;
+    }
+  }
+
+  // 全局替换
+  if (!matched) {
+    const allR = cmd.match(/所有\s*"?([^\s"]+)"?\s*[改换替换]\s*(?:成|为)?\s*"?([^\s"]+)"?/);
+    if (allR) {
+      let cnt = 0;
+      sc.forEach(s => {
+        ['location','summary','mainChars','minorChars','props','costumes','remark'].forEach(f => {
+          if (s[f] && s[f].includes(allR[1])) { s[f] = s[f].replace(new RegExp(allR[1],'g'), allR[2]); cnt++; }
+        });
+      });
+      refreshConfirmInputs(); reply = '✅ ' + cnt + '处 "' + allR[1] + '" → "' + allR[2] + '"'; matched = true;
+    }
+  }
+
+  // "删除/去掉 角色/道具 XXX"
+  if (!matched) {
+    const delR = cmd.match(/(?:删除|去掉|移除)\s*(?:角色|道具|服装)?\s*([^\s，。]+)/);
+    if (delR) {
+      let cnt = 0;
+      sc.forEach(s => {
+        ['mainChars','minorChars','props','costumes'].forEach(f => {
+          if (s[f] && s[f].includes(delR[1])) {
+            s[f] = s[f].replace(new RegExp('\\s*'+delR[1]+'\\s*','g'), ' ').trim(); cnt++;
+          }
+        });
+      });
+      refreshConfirmInputs(); reply = '✅ 已删除 ' + cnt + ' 处：' + delR[1]; matched = true;
+    }
+  }
+
+  // 列出查询
+  if (!matched) {
+    if (/列出|显示|查看/.test(cmd) && /角色/.test(cmd)) {
+      const all = new Set(); sc.forEach(s => (s.mainChars||'').split(/[\s、,]+/).filter(Boolean).forEach(c => all.add(c)));
+      reply = '👥 角色：' + (Array.from(all).join('、') || '无'); matched = true;
+    }
+    if (/列出|显示|查看/.test(cmd) && /道具/.test(cmd)) {
+      const all = new Set(); sc.forEach(s => (s.props||'').split(/[\s、,]+/).filter(Boolean).forEach(p => all.add(p)));
+      reply = '🎒 道具：' + (Array.from(all).join('、') || '无'); matched = true;
+    }
+    if (/列出|显示|查看/.test(cmd) && /服装/.test(cmd)) {
+      const all = new Set(); sc.forEach(s => (s.costumes||'').split(/[\s、,]+/).filter(Boolean).forEach(c => all.add(c)));
+      reply = '👗 服装：' + (Array.from(all).join('、') || '无'); matched = true;
+    }
+  }
+
+  // 没匹配到 → 智能兜底
+  if (!matched) {
+    // 尝试通用关键词搜索
+    const keywords = cmd.replace(/[的了吗呢啊吧是很有应该不对不是改成改为第\d+场]/g,' ').split(/[\s，。！？、]+/).filter(Boolean).filter(w => w.length >= 2);
+    if (keywords.length && namedEntities.length) {
+      // 尝试把提取到的人名加为角色
+      sc.forEach(s => {
+        namedEntities.forEach(n => {
+          if (s.rawText && s.rawText.includes(n) && !(s.mainChars||'').includes(n)) {
+            s.mainChars = s.mainChars ? s.mainChars + ' ' + n : n;
+          }
+        });
+      });
+      refreshConfirmInputs();
+      reply = '🤔 我尝试把 "' + namedEntities.join('、') + '" 添加为角色，<br>如有误请说"删除角色XXX"<br>或指定场次"第X场角色XXX"';
+    } else {
+      reply = '🤔 试试：<br>· "主角是妈妈和女儿"<br>· "第3场夜外"<br>· "不对，张三应该是张总"<br>· "删掉李四"<br>· "确认"';
+    }
   }
 
   showConfirmToast(reply);
   saveBreakdownData();
+}
+
+// 从文本中提取可能的中文人名
+function extractNames(text) {
+  const names = [];
+  // 匹配 "XX和YY" "XX、YY" 等
+  const patterns = [
+    /(?:是|只有|有|包括)[：:\s]*([^\s，。！？]{2,4})/g,
+    /([^\s，。！？]{2,3})[和与跟及]([^\s，。！？]{2,3})/g,
+    /[、，]([^\s，。！？\d]{2,3})(?=[、，。！？\s]|$)/g,
+  ];
+  patterns.forEach(p => {
+    let m;
+    while ((m = p.exec(text)) !== null) {
+      for (let i = 1; i < m.length; i++) {
+        const n = m[i].trim();
+        if (n.length >= 2 && n.length <= 4 && !/^(是|有|应该|不对|不是|改成|改为|第\d|确认|OK|好了)$/i.test(n)) {
+          names.push(n);
+        }
+      }
+    }
+  });
+  return [...new Set(names)];
 }
 
 function refreshConfirmInputs() {
