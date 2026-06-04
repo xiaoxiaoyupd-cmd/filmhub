@@ -247,63 +247,75 @@
     <section class="tool" id="tool-schedule">
       <div class="tool-header">
         <h1>📖 剧本分解 & 顺场表</h1>
-        <p class="tool-desc">粘贴剧本 → AI智能提取场次 → 分配拍摄日 → 一键生成大计划</p>
+        <p class="tool-desc">粘贴剧本 → AI提取场次 → 确认信息 → 顺场表 + 同场次分析</p>
       </div>
 
       <!-- 剧本输入区 -->
       <div class="card script-input-card">
-        <div class="si-header">
-          <h3>📝 剧本输入</h3>
-          <span class="si-hint">支持标准中文剧本格式：场号/场景/内外/日夜/角色对白</span>
-        </div>
-        <textarea id="script-input" class="script-textarea" placeholder="粘贴剧本内容，每场开头格式：&#10;&#10;1 场景名 日内&#10;描述内容...&#10;角色名：对白...&#10;&#10;2 另一个场景 夜外&#10;描述内容...&#10;角色名：对白...&#10;&#10;支持格式：1 xxx / 1. xxx / 1、xxx 等" rows="8"></textarea>
+        <div class="si-header"><h3>📝 剧本输入</h3></div>
+        <textarea id="script-input" class="script-textarea" placeholder="粘贴剧本，每场格式：&#10;1 场景名 日内&#10;描述...&#10;角色名：对白...&#10;&#10;2 另一个场景 夜外&#10;...&#10;&#10;支持: 1 xxx / 1. xxx / 1、xxx" rows="8"></textarea>
         <div class="si-actions">
           <button class="btn btn-primary btn-lg" onclick="analyzeScript()">🤖 AI分析剧本</button>
-          <button class="btn btn-outline btn-lg" onclick="normalizeScript()">🔄 标准化剧本格式</button>
-          <button class="btn btn-ghost btn-lg" onclick="loadSampleScript()">📋 加载示例</button>
+          <button class="btn btn-outline btn-lg" onclick="normalizeScript()">🔄 标准化格式</button>
+          <button class="btn btn-ghost btn-lg" onclick="loadSampleScript()">📋 示例</button>
           <span class="si-status" id="script-status"></span>
         </div>
       </div>
 
-      <!-- AI建议卡片 -->
-      <div class="ai-suggest-card card" id="ai-suggest" style="display:none;">
-        <div class="suggest-content" id="suggest-content"></div>
-        <div class="suggest-actions">
-          <button class="btn btn-outline btn-sm" onclick="autoAssignDays()">🪄 自动分配拍摄日</button>
-          <button class="btn btn-primary btn-sm" id="btn-today" onclick="assignToday()">📅 拍今天</button>
+      <!-- ===== AI确认对话面板 ===== -->
+      <div class="confirm-panel card" id="confirm-panel" style="display:none;">
+        <div class="confirm-header">
+          <h3>🤖 AI 识别结果确认</h3>
+          <p>请逐场核对信息，修改后点击"确认全部"生成顺场表</p>
+        </div>
+        <div class="confirm-scenes" id="confirm-scenes"></div>
+        <div class="confirm-actions">
+          <button class="btn btn-primary btn-lg" onclick="confirmAllScenes()">✅ 确认全部，生成顺场表</button>
+          <button class="btn btn-outline btn-lg" onclick="cancelAnalysis()">取消</button>
         </div>
       </div>
 
-      <!-- 双栏：场次列表 + 拍摄日分配 -->
-      <div class="bd-layout" id="bd-layout" style="display:none;">
-        <!-- 左栏：场次列表 -->
-        <div class="card bd-scenes">
-          <div class="bd-header">
-            <h3>🎬 场次列表 <span id="scene-count">0场</span></h3>
-            <button class="btn btn-outline btn-sm" onclick="addManualScene()">+ 手动添加</button>
-          </div>
-          <div class="table-wrap">
-            <table class="cs-table" id="bd-scene-table">
-              <thead><tr>
-                <th style="width:40px;">场号</th><th>主场景</th><th style="width:50px;">内/外</th>
-                <th style="width:50px;">日/夜</th><th>内容梗概</th><th style="width:50px;">页数</th>
-                <th>主要角色</th><th style="width:40px;"></th>
-              </tr></thead>
-              <tbody id="bd-scene-tbody"></tbody>
-            </table>
+      <!-- ===== 双表视图 ===== -->
+      <div id="bd-layout" style="display:none;">
+        <!-- AI建议 -->
+        <div class="ai-suggest-card card" id="ai-suggest">
+          <div class="suggest-content" id="suggest-content"></div>
+          <div class="suggest-actions">
+            <button class="btn btn-outline btn-sm" onclick="autoAssignDays()">🪄 自动分配</button>
+            <button class="btn btn-primary btn-sm" onclick="assignToday()">📅 拍今天</button>
           </div>
         </div>
 
-        <!-- 右栏：拍摄日 -->
-        <div class="card bd-days" id="bd-days-card">
+        <!-- 顺场表 + 同场次分析表 并排 -->
+        <div class="dual-tables">
+          <!-- 左：顺场表 -->
+          <div class="card">
+            <div class="bd-header"><h3>🎬 顺场表 <span id="scene-count">0场</span></h3></div>
+            <div class="table-wrap">
+              <table class="cs-table">
+                <thead><tr>
+                  <th>场号</th><th>场景</th><th>内/外</th><th>日/夜</th><th>页数</th><th>内容梗概</th><th>主要角色</th><th>次要角色</th><th>道具</th><th>服化</th>
+                </tr></thead>
+                <tbody id="bd-scene-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- 右：同场次分析表 -->
+          <div class="card">
+            <div class="bd-header"><h3>📍 同场次分析 <span id="same-loc-count">0组</span></h3></div>
+            <div id="same-loc-table"></div>
+          </div>
+        </div>
+
+        <!-- 拍摄日分配 -->
+        <div class="card" style="margin-top:20px;">
           <div class="bd-header">
             <h3>📅 拍摄日安排</h3>
             <button class="btn btn-outline btn-sm" onclick="addShootingDay()">+ 添加拍摄日</button>
           </div>
           <div id="bd-days-list">
-            <div class="bd-empty" id="bd-days-empty">
-              <p>👆 从左侧点击场次分配到拍摄日</p>
-            </div>
+            <div class="bd-empty" id="bd-days-empty"><p>👆 点击顺场表中场次分配到拍摄日</p></div>
           </div>
           <div class="bd-days-actions" id="bd-days-actions" style="display:none;">
             <button class="btn btn-primary" onclick="exportBreakdown()">📊 导出顺场表</button>
@@ -320,5 +332,6 @@
 <div class="toast" id="toast"></div>
 
 <script src="js/app.js"></script>
+<script src="js/breakdown.js"></script>
 </body>
 </html>
