@@ -447,7 +447,7 @@ let AppBreakdown = { scenes: [], days: [] };
 const SAMPLE_SCRIPT = `1 张三卧室 日内
 阳光透过窗帘洒进来，张三躺在床上盯着天花板发呆。手机响了。
 张三：喂...
-李四（电话里）：还没起？今天的会议你忘了？
+李四（OS）：还没起？今天的会议你忘了？
 张三猛地坐起来。
 张三：几点了？！我马上到！
 
@@ -455,21 +455,24 @@ const SAMPLE_SCRIPT = `1 张三卧室 日内
 十几个人围坐在会议桌前，气氛凝重。
 王总：这个方案客户不满意，全部重做。
 张三低着头不敢说话。李四在旁边悄悄推了推他。
-李四：别慌，我有备份方案。
+李四（小声）：别慌，我有备份方案。
 
 3 公司茶水间 日内
 张三和李四在冲咖啡。
 张三：多亏了你，不然我就完了。
 李四：咱们是搭档嘛。
-赵五走进来，看了看两人。
-赵五：听说你们那个项目要延期？
 
 4 张三卧室 夜内
 张三坐在电脑前加班改方案。窗外下起了雨。
 手机屏幕亮起，是妈妈发来的消息："生日快乐"
 张三看了一眼，眼眶微红，继续低头工作。
 
-5 公司天台 日外
+5 张三卧室 日内
+张三从床上惊醒，原来是一场梦。阳光依旧灿烂。
+张三（自语）：还好是梦...
+张三迅速洗漱出门。
+
+6 公司天台 日外
 张三站在天台上吹风。李四上来找他。
 李四：就知道你在这儿。
 张三：有时候不知道这么拼是为了什么。
@@ -567,14 +570,18 @@ function parseScript(text) {
     const line = raw.trim();
     if (!line) continue;
 
-    // 检测场次开头：行首数字（1-999）后跟空格/句号/顿号
-    const sceneMatch = line.match(/^(\d{1,3})\s*[\.\、\s．。]\s*(.+)/);
-    // 也匹配纯数字后跟中文（无标点）："1卧室 日内"
-    const bareMatch = line.match(/^(\d{1,3})\s*([一-鿿])/);
+    // 检测场次开头 — 行首数字（1-999）
+    // 支持: "1 xxx" "1.xxx" "1、xxx" "1）xxx" "1) xxx" "1xxx"（数字后直接中文）
+    const sceneMatch = line.match(/^(\d{1,3})\s*[\.\、\s．。）\)\s]\s*(.+)/);
+    const bareMatch = !sceneMatch ? line.match(/^(\d{1,3})([一-鿿a-zA-Z])/) : null;
 
     if (sceneMatch || bareMatch) {
       // 保存上一场
-      if (currentScene) finalizeScene(currentScene, scenes);
+      if (currentScene && currentScene.bodyLines.length > 0) {
+        finalizeScene(currentScene, scenes);
+      } else if (currentScene) {
+        // 上一场没有正文，可能是误判的场景头，丢弃它
+      }
 
       let num, rest;
       if (sceneMatch) {
@@ -582,7 +589,7 @@ function parseScript(text) {
         rest = sceneMatch[2];
       } else {
         num = bareMatch[1];
-        rest = line.substring(bareMatch[0].length - 1); // 从中文开始
+        rest = line.substring(bareMatch[0].length - 1); // 从中文字符开始
       }
 
       currentScene = {
@@ -605,18 +612,32 @@ function parseScript(text) {
   if (currentScene) finalizeScene(currentScene, scenes);
 
   function finalizeScene(sc, arr) {
-    // 解析头部：提取场景名 + 内外 + 日夜
     let header = sc.headerLine;
     let io = '内', dn = '日';
 
-    // 提取 "日内" "夜外" "外夜" 等
-    const ioDn = header.match(/([内外])\s*([日夜])/);
-    if (ioDn) { io = ioDn[1]; dn = ioDn[2]; header = header.replace(ioDn[0], '').trim(); }
+    // 提取内外日夜 — 支持 "内日" "外夜" "日内" "夜外" 等所有组合
+    const ioDnA = header.match(/([内外])\s*([日夜])/);  // 内日、外夜
+    const ioDnB = header.match(/([日夜])\s*([内外])/);  // 日内、夜外
 
-    // 提取单独的内/外/日/夜标记
-    if (!ioDn) {
-      if (/外景|室外|户外|EXT/i.test(header)) io = '外';
-      if (/夜|晚|NIGHT|傍晚|凌晨/i.test(header)) dn = '夜';
+    if (ioDnA) {
+      io = ioDnA[1]; dn = ioDnA[2];
+      header = header.replace(ioDnA[0], '').trim();
+    } else if (ioDnB) {
+      dn = ioDnB[1]; io = ioDnB[2];
+      header = header.replace(ioDnB[0], '').trim();
+    }
+
+    // 单独出现的标记
+    if (/^外景|室外|户外|EXT|外拍/i.test(header)) io = '外';
+    if (/^夜景|夜晚|NIGHT|傍晚|凌晨|傍晚/i.test(header)) dn = '夜';
+    // 头部中单独的内外日夜
+    if (/[\s　]([内外])(?![\s\S]*[日夜])/.test(header)) {
+      const m = header.match(/[\s　]([内外])/);
+      if (m) { io = m[1]; header = header.replace(m[0], '').trim(); }
+    }
+    if (/[\s　]([日夜])(?![\s\S]*[内外])/.test(header)) {
+      const m = header.match(/[\s　]([日夜])/);
+      if (m) { dn = m[1]; header = header.replace(m[0], '').trim(); }
     }
 
     // 提取场景名：取头部前几个词作为主场景/次场景
