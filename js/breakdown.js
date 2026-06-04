@@ -593,56 +593,94 @@ function traceToSource(sceneIdx, fieldType, keyword) {
 
 // 右键菜单
 let ctxMenu = null;
+let _ctxSceneIdx = -1;
+
 function onRawTextSelect(event, sceneIdx) {
-  const selection = window.getSelection();
-  const selectedText = selection.toString().trim();
+  _ctxSceneIdx = sceneIdx;
 
   // 移除旧菜单
   if (ctxMenu) { ctxMenu.remove(); ctxMenu = null; }
 
-  if (!selectedText || selectedText.length < 2 || selectedText.length > 15) return;
-
-  // 创建右键菜单
-  ctxMenu = document.createElement('div');
-  ctxMenu.className = 'ctx-menu';
-  ctxMenu.innerHTML = `
-    <div class="ctx-item" onclick="markAsEntity(${sceneIdx},'mainChars','${esc(selectedText)}')">👤 添加至主要角色</div>
-    <div class="ctx-item" onclick="markAsEntity(${sceneIdx},'minorChars','${esc(selectedText)}')">👥 添加至次要角色</div>
-    <div class="ctx-item" onclick="markAsEntity(${sceneIdx},'props','${esc(selectedText)}')">🎒 标记为道具</div>
-    <div class="ctx-item" onclick="markAsEntity(${sceneIdx},'costumes','${esc(selectedText)}')">👗 标记为服装</div>
-  `;
-  ctxMenu.style.left = event.pageX + 'px';
-  ctxMenu.style.top = event.pageY + 'px';
-  document.body.appendChild(ctxMenu);
-
-  // 点击其他地方关闭
+  // 延迟获取选区（等浏览器完成选择）
   setTimeout(() => {
-    document.addEventListener('click', function closeCtx() {
-      if (ctxMenu) { ctxMenu.remove(); ctxMenu = null; }
-      document.removeEventListener('click', closeCtx);
-    }, { once: true });
-  }, 100);
+    const selection = window.getSelection();
+    const selectedText = (selection || '').toString().trim();
+
+    if (!selectedText || selectedText.length < 2 || selectedText.length > 15) return;
+
+    // 获取选区位置（用于菜单定位）
+    let x = event.pageX, y = event.pageY;
+    if (selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      x = rect.left + rect.width / 2;
+      y = rect.bottom + 4;
+    }
+
+    ctxMenu = document.createElement('div');
+    ctxMenu.className = 'ctx-menu';
+    ctxMenu.setAttribute('data-scene', _ctxSceneIdx);
+    ctxMenu.setAttribute('data-value', escAttr(selectedText));
+    ctxMenu.innerHTML = `
+      <div class="ctx-item" data-action="mainChars">👤 添加至主要角色</div>
+      <div class="ctx-item" data-action="minorChars">👥 添加至次要角色</div>
+      <div class="ctx-item" data-action="props">🎒 标记为道具</div>
+      <div class="ctx-item" data-action="costumes">👗 标记为服装</div>
+    `;
+
+    // 绑定点击事件
+    ctxMenu.querySelectorAll('.ctx-item').forEach(item => {
+      item.addEventListener('click', function(e) {
+        e.stopPropagation();
+        const action = this.dataset.action;
+        const val = ctxMenu.getAttribute('data-value');
+        const sidx = parseInt(ctxMenu.getAttribute('data-scene'));
+        doMarkAsEntity(sidx, action, val);
+      });
+    });
+
+    ctxMenu.style.left = Math.min(x, window.innerWidth - 170) + 'px';
+    ctxMenu.style.top = Math.min(y, window.innerHeight - 160) + 'px';
+    document.body.appendChild(ctxMenu);
+
+    // 全局点击关闭
+    const closeHandler = function(e) {
+      if (ctxMenu && !ctxMenu.contains(e.target)) {
+        ctxMenu.remove(); ctxMenu = null;
+        document.removeEventListener('click', closeHandler);
+        document.removeEventListener('contextmenu', closeHandler);
+      }
+    };
+    setTimeout(() => {
+      document.addEventListener('click', closeHandler);
+      document.addEventListener('contextmenu', closeHandler);
+    }, 50);
+  }, 50);
 }
 
-function markAsEntity(sceneIdx, field, value) {
+function doMarkAsEntity(sceneIdx, field, value) {
   if (ctxMenu) { ctxMenu.remove(); ctxMenu = null; }
   const sc = AppBreakdown.scenes[sceneIdx];
   if (!sc) return;
 
-  // 添加到对应字段
-  const existing = (sc[field] || '').split(/[\s、,]+/).filter(Boolean);
+  const existing = (sc[field] || '').split(/[\s、，,\s]+/).filter(Boolean);
   if (!existing.includes(value)) {
     existing.push(value);
     sc[field] = existing.join(' ');
     refreshConfirmInputs();
     saveBreakdownData();
-
-    // 收集训练数据
     collectTrainingData(sceneIdx, field, value, sc.rawText);
-
     showConfirmToast('✅ 已标记: ' + value + ' → ' + ({mainChars:'主要角色',minorChars:'次要角色',props:'道具',costumes:'服装'}[field] || field));
+  } else {
+    showConfirmToast('⚠️ ' + value + ' 已存在');
   }
 }
+
+function markAsEntity(sceneIdx, field, value) {
+  doMarkAsEntity(sceneIdx, field, value);
+}
+
+function escAttr(s) { return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;'); }
 
 // 训练数据收集
 function collectTrainingData(sceneIdx, field, value, rawText) {
