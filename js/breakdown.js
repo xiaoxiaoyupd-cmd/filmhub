@@ -387,6 +387,7 @@ function confirmAllScenes() {
   });
   saveFieldHistory(hist);
   AppBreakdown.confirmed = true;
+  DataHub.importFromBreakdown(AppBreakdown.scenes); // → 中央数据池
   document.getElementById('confirm-panel').style.display = 'none';
   document.getElementById('bd-layout').style.display = 'block';
   document.getElementById('ai-suggest').style.display = 'flex';
@@ -469,6 +470,7 @@ function autoAssignDays() {
   });
   days.push(curDay);
   AppBreakdown.days = days;
+  DataHub.importShootingDays(days); // → 中央数据池
   renderSceneTable(); renderDayPanels(); saveBreakdownData();
   showToast('已自动分配 ' + days.length + ' 天 ✅');
 }
@@ -498,6 +500,7 @@ function renderDayPanels() {
     const scenes = day.sceneIds.map(sid => AppBreakdown.scenes.find(s => s.id === sid)).filter(Boolean);
     return `<div class="day-panel"><div class="day-header"><span class="day-label">${day.label}</span><span class="day-stats">${scenes.length}场 ${scenes.reduce((s,sc)=>s+sc.pages,0).toFixed(1)}页</span><button class="btn-icon btn-del" onclick="removeDay(${day.id})">✕</button></div><div class="day-scenes">${scenes.length===0?'<span class="day-empty-hint">点击上方顺场表加入此日</span>':''}${scenes.map(sc => `<div class="day-scene-chip" onclick="unassignScene(${sc.id},${day.id})"><span class="chip-num">${sc.num}</span><span class="chip-loc">${esc(sc.location)}</span><span class="chip-io ${sc.io==='外'?'out':'in'}">${sc.io}${sc.dn}</span><span class="chip-pages">${sc.pages}页</span></div>`).join('')}</div></div>`;
   }).join('');
+  DataHub.importShootingDays(AppBreakdown.days); // → 数据池同步
 }
 
 function addShootingDay() {

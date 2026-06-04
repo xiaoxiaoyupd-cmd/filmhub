@@ -355,6 +355,66 @@ function shareCallSheet() {
   }
 }
 
+// --- 从拍摄日导入通告单 ---
+function showDayImport() {
+  const options = DataHub.getDayOptions();
+  if (!options.length) { showToast('请先在剧本分解中分配拍摄日'); return; }
+  const sel = document.getElementById('day-import-select');
+  sel.innerHTML = '<option value="">选择拍摄日...</option>' + options.map(o =>
+    '<option value="'+o.id+'">'+o.label+' ('+o.sceneCount+'场)</option>'
+  ).join('');
+  sel.style.display = ''; sel.focus();
+}
+
+function importFromShootingDay() {
+  const sel = document.getElementById('day-import-select');
+  const dayId = parseInt(sel.value);
+  if (!dayId) return;
+  const data = DataHub.getDayCallSheetData(dayId);
+  if (!data) { showToast('数据读取失败'); return; }
+
+  setVal('cs-date', data.date);
+  document.getElementById('day-import-info').textContent = '已导入: ' + data.label + ' (' + data.sceneCount + '场 ' + data.totalPages.toFixed(1) + '页)';
+
+  // 填充场次表
+  const stbody = document.getElementById('cs-scene-tbody');
+  stbody.innerHTML = '';
+  data.scenes.forEach(sc => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td><input type="text" class="cs-scene-num" value="${esc(sc.num||'')}"></td>
+      <td><select class="cs-scene-io">${opt2('内',sc.io)}${opt2('外',sc.io)}${opt2('内外',sc.io)}</select></td>
+      <td><select class="cs-scene-dn">${opt2('日',sc.dn)}${opt2('夜',sc.dn)}${opt2('日夜',sc.dn)}</select></td>
+      <td><input type="text" class="cs-scene-pages" value="${esc(sc.pages||'')}"></td>
+      <td><input type="text" class="cs-scene-desc" value="${esc(sc.summary||'')}"></td>
+      <td><input type="text" class="cs-scene-lead" value="${esc(sc.mainChars||'')}"></td>
+      <td><input type="text" class="cs-scene-extras" value="" style="width:50px;"></td>
+      <td><input type="text" class="cs-scene-loc" value="${esc(sc.location||'')}"></td>
+      <td><button class="btn-icon btn-del" onclick="removeSceneRow(this)">x</button></td>`;
+    stbody.appendChild(tr);
+  });
+
+  // 填充演员表
+  const ctbody = document.getElementById('cs-cast-tbody');
+  ctbody.innerHTML = '';
+  data.chars.forEach(ch => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td><input type="text" class="cast-role" value="${esc(ch)}"></td>
+      <td><input type="text" class="cast-actor" placeholder="演员名"></td>
+      <td><input type="time" class="cast-makeup" value="05:30"></td>
+      <td><input type="time" class="cast-arrive" value="06:30"></td>
+      <td><input type="text" class="cast-scenes" placeholder="场次"></td>
+      <td><input type="text" class="cast-note" placeholder="备注"></td>
+      <td><button class="btn-icon btn-del" onclick="removeCastRow(this)">x</button></td>`;
+    ctbody.appendChild(tr);
+  });
+
+  if (data.props.length) setVal('cs-note-special', '道具: ' + data.props.join(' '));
+  showToast('已导入 ' + data.label + ' (' + data.sceneCount + '场)');
+  sel.style.display = 'none';
+}
+
+function opt2(val, cur) { return '<option value="'+val+'" '+(val===cur?'selected':'')+'>'+val+'</option>'; }
+
 // --- 保存/加载 ---
 function saveCallSheet() {
   const data = {

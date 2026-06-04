@@ -925,6 +925,40 @@ body {
   line-height: 1.6;
 }
 
+/* ============================================
+   组员管理 / 酒店 / 预算
+   ============================================ */
+.crew-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+.crew-tabs .tab-btn { padding: 8px 18px; }
+.crew-panel { display: none; }
+.crew-panel.active { display: block; }
+
+/* 酒店 */
+.hotel-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.hotel-room-card {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 12px; background: #FAFBFC;
+}
+.room-header { font-weight: 700; font-size: 0.85rem; display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.room-header span { font-size: 0.7rem; color: var(--text2); margin-left: auto; }
+.room-occupants { display: flex; flex-wrap: wrap; gap: 4px; }
+.hotel-guest {
+  display: inline-block; padding: 3px 8px;
+  background: #E8F5E9; border: 1px solid #C8E6C9;
+  border-radius: 12px; font-size: 0.73rem; font-weight: 600;
+}
+.hotel-guest small { font-weight: 400; color: var(--text2); }
+
+/* 预算 */
+.budget-card {
+  flex: 1; min-width: 120px;
+  text-align: center; padding: 16px 20px;
+  background: #F8FAFF; border: 1px solid #D0DAF0;
+  border-radius: var(--radius);
+}
+.budget-num { font-size: 1.3rem; font-weight: 900; color: var(--primary); }
+.budget-label { font-size: 0.72rem; color: var(--text2); margin-top: 2px; font-weight: 600; }
+
 /* 响应式 */
 @media (max-width: 1000px) {
   .dual-tables { grid-template-columns: 1fr; }
