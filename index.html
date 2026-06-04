@@ -271,10 +271,18 @@
         <div class="confirm-scenes" id="confirm-scenes"></div>
         <!-- 确认面板内的LINK助手 -->
         <div class="confirm-assistant">
-          <span class="confirm-as-label">💬 LINK小助手：</span>
-          <input type="text" id="confirm-as-input" placeholder="如：主角是妈妈和女儿 / 所有场加道具手机 / 第3场夜外"
+          <span class="confirm-as-label">💬 LINK：</span>
+          <input type="text" id="confirm-as-input" placeholder="自然交流，如：主角是妈妈和女儿 / 不对第3场应该是夜外"
             onkeydown="if(event.key==='Enter')sendConfirmCmd()">
           <button class="btn btn-primary btn-sm" onclick="sendConfirmCmd()">发送</button>
+          <span style="font-size:0.65rem;color:var(--text3);margin-left:4px;cursor:pointer;" onclick="toggleApiKeyInput()" title="接入AI模型">🔑</span>
+        </div>
+        <div id="api-key-row" style="display:none;padding:6px 14px;background:#FFFBE6;border:1px solid #F5D23E;border-radius:6px;margin-top:4px;display:none;align-items:center;gap:6px;flex-wrap:wrap;">
+          <span style="font-size:0.7rem;font-weight:700;">DeepSeek API Key：</span>
+          <input type="password" id="ds-api-key" placeholder="sk-..." style="flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:0.75rem;min-width:180px;">
+          <button class="btn btn-primary btn-sm" onclick="saveApiKey()">保存</button>
+          <span id="api-status" style="font-size:0.7rem;"></span>
+          <span style="font-size:0.65rem;color:var(--text3);">免费注册 deepseek.com → API Keys</span>
         </div>
         <div class="confirm-actions">
           <button class="btn btn-primary btn-lg" onclick="confirmAllScenes()">✅ 确认全部，生成顺场表</button>

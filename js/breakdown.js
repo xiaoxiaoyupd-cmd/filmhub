@@ -385,22 +385,172 @@ function saveFieldHistory(hist) {
 // ============================================
 // 确认面板内 LINK 助手
 // ============================================
-function sendConfirmCmd() {
+// ============================================
+// API Key 管理
+// ============================================
+let dsApiKey = localStorage.getItem('fh_ds_key') || '';
+
+function toggleApiKeyInput() {
+  const row = document.getElementById('api-key-row');
+  row.style.display = row.style.display === 'none' ? 'flex' : 'none';
+  if (row.style.display !== 'none') {
+    document.getElementById('ds-api-key').value = dsApiKey;
+  }
+}
+
+function saveApiKey() {
+  dsApiKey = document.getElementById('ds-api-key').value.trim();
+  if (dsApiKey) {
+    localStorage.setItem('fh_ds_key', dsApiKey);
+    document.getElementById('api-status').textContent = '✅ 已保存';
+    document.getElementById('api-status').style.color = '#2BA471';
+  } else {
+    localStorage.removeItem('fh_ds_key');
+    document.getElementById('api-status').textContent = '已清除';
+    document.getElementById('api-status').style.color = '';
+  }
+}
+
+// 初始化 API key
+(function() {
+  if (dsApiKey) {
+    setTimeout(() => {
+      const status = document.getElementById('api-status');
+      if (status) { status.textContent = '✅ 已配置'; status.style.color = '#2BA471'; }
+    }, 500);
+  }
+})();
+
+// ============================================
+// DeepSeek AI 调用
+// ============================================
+async function callDeepSeek(userMsg, sceneData) {
+  const systemPrompt = `你是一个影视剧本分析助手"LINK小助手"，运行在制片工具Prodlink中。
+用户正在审核AI自动提取的剧本场次数据。用户会用自然语言提出修改要求。
+
+当前场次数据（JSON数组）：
+${JSON.stringify(sceneData.map(s => ({
+  场号:s.num, 场景:s.location, 内外:s.io, 日夜:s.dn,
+  页数:s.pages, 内容梗概:s.summary, 主要角色:s.mainChars,
+  次要角色:s.minorChars, 道具:s.props, 服装:s.costumes,
+  备注:s.remark, 剧本原文:s.rawText?.substring(0,100)
+})), null, 2)}
+
+请根据用户消息返回JSON（不要任何其他内容）：
+1. 如果是修改请求 → {"action":"update","scenes":[{"num":场号,"field":"字段名","value":"新值"},...],"reply":"简短确认"}
+2. 如果是查询请求 → {"action":"reply","reply":"回答内容"}
+3. 如果是确认无误 → {"action":"confirm"}
+4. 如果无法理解 → {"action":"unknown","reply":"引导用户的话"}
+
+可修改的field: location, io(内/外), dn(日/夜), pages, summary, mainChars, minorChars, props, costumes, remark
+如果要修改全部场次，scenes数组里写 {"num":"*","field":"mainChars","value":"妈妈 女儿"} 带上num:"*"`;
+
+  try {
+    const resp = await fetch('https://api.deepseek.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + dsApiKey },
+      body: JSON.stringify({
+        model: 'deepseek-chat',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMsg }
+        ],
+        temperature: 0.3,
+        max_tokens: 1000
+      })
+    });
+
+    if (!resp.ok) {
+      const err = await resp.text();
+      throw new Error('API错误 ' + resp.status + ': ' + err.substring(0, 100));
+    }
+
+    const data = await resp.json();
+    const content = data.choices?.[0]?.message?.content || '';
+    // 提取JSON
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    return jsonMatch ? JSON.parse(jsonMatch[0]) : { action: 'unknown', reply: content };
+  } catch(e) {
+    return { action: 'error', reply: 'AI调用失败: ' + e.message };
+  }
+}
+
+// ============================================
+// 调度：AI优先，本地兜底
+// ============================================
+async function sendConfirmCmd() {
   const input = document.getElementById('confirm-as-input');
   const cmd = input.value.trim();
   if (!cmd) return;
   input.value = '';
+  input.disabled = true;
 
+  const sc = AppBreakdown.scenes;
+  let result = null;
+
+  // 简单确认不走AI
+  if (/^(确认|OK|ok|好了|行|没问题|可以|就这样)$/.test(cmd)) {
+    saveBreakdownData(); confirmAllScenes(); input.disabled = false; return;
+  }
+
+  // 有API Key → 走AI
+  if (dsApiKey && dsApiKey.startsWith('sk-')) {
+    showConfirmToast('🤖 AI思考中...');
+    result = await callDeepSeek(cmd, sc);
+  }
+
+  // 处理AI返回
+  if (result) {
+    if (result.action === 'confirm') {
+      saveBreakdownData(); confirmAllScenes(); input.disabled = false; return;
+    }
+
+    if (result.action === 'update' && result.scenes) {
+      result.scenes.forEach(upd => {
+        if (upd.num === '*') {
+          // 全局修改
+          sc.forEach(s => { s[upd.field] = upd.value; });
+        } else {
+          const s = sc.find(x => x.num === String(upd.num) || x.num === upd.num);
+          if (s) {
+            if (upd.field === 'pages') s[upd.field] = parseFloat(upd.value) || s.pages;
+            else s[upd.field] = upd.value;
+          }
+        }
+      });
+      refreshConfirmInputs();
+      saveBreakdownData();
+      showConfirmToast('✅ ' + (result.reply || '已更新'));
+      input.disabled = false;
+      return;
+    }
+
+    if (result.action === 'reply' || result.action === 'unknown') {
+      showConfirmToast((result.action==='unknown'?'🤖 ':'') + result.reply);
+      input.disabled = false;
+      return;
+    }
+
+    if (result.action === 'error') {
+      // AI失败，走本地
+      showConfirmToast('⚠️ ' + result.reply + '，切换到本地处理');
+    }
+  }
+
+  // 本地规则兜底
+  if (!result || result.action === 'error') {
+    processLocalCmd(cmd);
+  }
+  input.disabled = false;
+}
+
+// ============================================
+// 本地规则处理
+// ============================================
+function processLocalCmd(cmd) {
   const sc = AppBreakdown.scenes;
   let reply = '';
   let matched = false;
-
-  // ── 便捷：确认 ──
-  if (/^(确认|OK|ok|好了|行|没问题|可以|就这样)$/.test(cmd)) {
-    saveBreakdownData(); confirmAllScenes(); return;
-  }
-
-  // ── 自然语言理解引擎 ──
 
   // 1. 提取场次号（如果有）
   const sceneNumMatch = cmd.match(/第\s*(\d+)\s*场/);
