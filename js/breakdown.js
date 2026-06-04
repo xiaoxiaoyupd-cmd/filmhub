@@ -224,15 +224,60 @@ async function enhanceBatch(batch) {
   return results;
 }
 
+// ============================================
+// 本地解析器 v5 — 精准提取
+// ============================================
+
+// 中文姓名检测（常见姓氏 + 2-4字组合）
+const CN_SURNAMES = '王李张刘陈杨赵黄周吴徐孙马胡朱郭何罗高林郑梁谢唐许冯宋韩邓彭曹曾田萧潘袁蔡蒋余于杜叶程苏魏吕丁任卢姚沈钟姜崔谭陆范汪廖石金贾韦夏傅方白邹孟熊秦邱江尹薛闫段雷侯龙史陶黎贺顾毛郝龚邵万钱严覃武戴莫孔向汤';
+
+function isChName(word) {
+  if (!word || word.length < 2 || word.length > 4) return false;
+  if (/^\d+$/.test(word)) return false;
+  // 必须全部是中文字符
+  if (!/^[一-鿿]+$/.test(word)) return false;
+  // 黑名单：不是人名的常见词
+  const BANNED = new Set([
+    '镜头','远景','近景','特写','中景','全景','跟拍','移动','入画','出画','画外','旁白','空镜',
+    '字幕','切换','淡入','淡出','转场','叠化','切至','杭州','上海','北京','广州','深圳',
+    '清晨','黄昏','傍晚','凌晨','中午','下午','晚上','白天','夜晚','今天','明天','昨天',
+    '他们','她们','我们','你们','自己','大家','有人','有人','忽然','突然','然后','接着',
+    '外面','里面','旁边','前面','后面','上面','下面','远处','近处','这里','那里','哪里',
+    '穿着','戴着','拿着','背着','提着','看见','听见','闻到','觉得','好像','仿佛','似乎',
+    '什么','怎么','为什么','非常','十分','比较','稍微','已经','正在','将要','没有','还是'
+  ]);
+  if (BANNED.has(word)) return false;
+  // 姓在常见姓氏表中，提高置信度
+  if (CN_SURNAMES.includes(word[0])) return true;
+  // 称呼类角色名
+  if (/^(妈妈|爸爸|女儿|儿子|爷爷|奶奶|外婆|外公|叔叔|阿姨|舅舅|姑姑|姐姐|哥哥|弟弟|妹妹|老公|老婆|男友|女友|同学|老师|老板|同事|朋友|邻居|路人|司机|保安|警察|医生|护士|服务员|外卖|快递)$/.test(word)) return true;
+  // 泛指角色，允许（后续归为minor）
+  if (/^(路人|学生|群众|顾客|乘客|游客|观众|粉丝|队员|组员|同事|邻居|行人|青年|中年|老年|男子|女子|男孩|女孩|小孩|儿童)$/.test(word)) return true;
+  return false;
+}
+
+// 泛指角色/群演
+function isExtra(word) {
+  return /^(路人|学生|群众|顾客|乘客|游客|观众|粉丝|队员|组员|同事|邻居|行人|青年|中年|老年|男子|女子|男孩|女孩|小孩|儿童|骑自行车的|跑步的|遛狗的|散步的)$/.test(word);
+}
+
+// ── 剧本分割 ──
 function parseScript(text) {
+  // 先统一格式
+  text = normalizeScriptFormat(text);
+
   const scenes = [];
   const lines = text.split(/\n/);
   let cur = null;
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
+
+    // 检测场次开头 — 行首数字
     const m1 = line.match(/^(\d{1,3})\s*[\.\、\s．。）\)\s]\s*(.+)/);
-    const m2 = !m1 ? line.match(/^(\d{1,3})([一-鿿a-zA-Z])/) : null;
+    const m2 = !m1 ? line.match(/^(\d{1,3})([一-鿿])/) : null;
+
     if (m1 || m2) {
       if (cur && cur.bodyLines.length > 0) scenes.push(buildScene(cur));
       const num = m1 ? m1[1] : m2[1];
@@ -243,70 +288,246 @@ function parseScript(text) {
     }
   }
   if (cur && cur.bodyLines.length > 0) scenes.push(buildScene(cur));
+
+  // 后处理：标记关键道具（≥2场出现）
+  markKeyProps(scenes);
+
   return scenes;
 }
 
+function normalizeScriptFormat(text) {
+  // 第X场 → 数字
+  text = text.replace(/第\s*(\d+)\s*场\s*/g, '$1 ');
+  // 场X：→ 数字
+  text = text.replace(/(?:场次?|Scene)\s*(\d+)\s*[：:]\s*/gi, '$1 ');
+  // 中文数字场
+  const cn = { '一':'1','二':'2','三':'3','四':'4','五':'5','六':'6','七':'7','八':'8','九':'9','十':'10' };
+  for (const [k,v] of Object.entries(cn)) text = text.replace(new RegExp('第'+k+'[场幕]','g'), v+' ');
+  // 数字. / 数字、/ （数字）
+  text = text.replace(/(?:^|\n)\s*(\d+)[\.、）\)]\s*/g, '\n$1 ');
+  return text;
+}
+
+// ── 单场构建 ──
 function buildScene(sc) {
   const body = sc.bodyLines.join('\n');
   sc.rawText = (sc.headerLine + '\n' + body).trim();
   let header = sc.headerLine;
-  let io = '内', dn = '日';
 
-  // 内外日夜 — 支持两种顺序
-  const m1 = header.match(/([内外])\s*([日夜])/);
-  const m2 = header.match(/([日夜])\s*([内外])/);
+  // 内外日夜解析
+  let io = '内', dn = '日';
+  const m1 = header.match(/([内外])\s*([日夜])/);   // 内日、外夜
+  const m2 = header.match(/([日夜])\s*([内外])/);   // 日内、夜外
   if (m1) { io = m1[1]; dn = m1[2]; header = header.replace(m1[0], '').trim(); }
   else if (m2) { dn = m2[1]; io = m2[2]; header = header.replace(m2[0], '').trim(); }
+
+  // 英文标记
+  if (/\bINT\b/i.test(header)) { io = '内'; header = header.replace(/\bINT\b/gi, '').trim(); }
+  if (/\bEXT\b/i.test(header)) { io = '外'; header = header.replace(/\bEXT\b/gi, '').trim(); }
+  if (/\bDAY\b/i.test(header)) { dn = '日'; header = header.replace(/\bDAY\b/gi, '').trim(); }
+  if (/\bNIGHT\b/i.test(header)) { dn = '夜'; header = header.replace(/\bNIGHT\b/gi, '').trim(); }
+  // 中文单独标记
+  if (/室外|户外|外景|外拍/i.test(header)) io = '外';
+  if (/室内|内景/i.test(header)) io = '内';
+  if (/夜晚|深夜|午夜/i.test(header)) dn = '夜';
+  if (/清晨|早晨|白天|上午|中午|下午|黄昏/i.test(header)) dn = '日';
+
+  // 清理镜头术语和位置描述
+  header = header.replace(/镜头[一二三\d]*|远景|近景|特写|中景|全景|跟拍|移动|入画|出画|切换|淡入|淡出|转场|叠化|切至/g, '');
   const location = header.replace(/[\s　]+/g, ' ').trim() || ('场景' + sc.num);
 
-  // 内容梗概
-  const bodyLines = sc.bodyLines.filter(l => l.length > 3);
-  let summary = '';
-  for (const l of bodyLines) { if (!/：|:/.test(l) && l.length > 5) { summary = l.substring(0, 55); break; } }
-  if (!summary && bodyLines.length) summary = bodyLines[0].substring(0, 55);
-
-  // 角色 + 位置追踪
-  const chars = new Set(), minors = new Set(), props = new Set();
+  // ===== 角色提取 v5 =====
+  const allText = sc.rawText;
   const highlights = { mainChars: {}, minorChars: {}, props: {} };
+  const charStats = {}; // {name: {dialogue:bool, actions:int}}
 
-  for (const l of bodyLines) {
-    // 对白提取: "XXX："
-    const dm = l.match(/^([^\s：:（）()\d]{1,8})[：:]/);
-    if (dm && !/^(INT|EXT|DAY|NIGHT|第|场|内|外|日|夜|OS|VO)$/i.test(dm[1])) {
-      chars.add(dm[1]);
-      recordHighlight(highlights.mainChars, dm[1], sc.rawText);
-    }
-    // 动作提取: "XXX（"
-    const am = l.match(/^([^\s：:（）()\d]{1,8})[（(]/);
-    if (am && am[1].length < 6) {
-      chars.add(am[1]);
-      recordHighlight(highlights.mainChars, am[1], sc.rawText);
-    }
-    // 道具提取 + 位置
-    ['拿着','递给','掏出','放在','取出','端起','放下','打开','背着','挂着','提着','握着'].forEach(v => {
-      const pm = l.match(new RegExp(v+'([一-鿥a-zA-Z0-9]{1,8})'));
-      if (pm) {
-        props.add(pm[1]);
-        recordHighlight(highlights.props, pm[1], sc.rawText);
-      }
-    });
+  function addChar(name, isDialogue) {
+    if (!name || !isChName(name)) return;
+    if (!charStats[name]) charStats[name] = { dialogue: false, actions: 0 };
+    if (isDialogue) charStats[name].dialogue = true;
+    else charStats[name].actions++;
   }
 
+  // 逐行分析
+  for (const line of sc.bodyLines) {
+    // 1. 对白角色 "XXX：" "XXX:"
+    const dm = line.match(/^([^\s：:（）()\d]{1,8})[：:]\s*(.+)/);
+    if (dm && isChName(dm[1])) {
+      addChar(dm[1], true);
+      recordHighlight(highlights.mainChars, dm[1], allText);
+      continue;
+    }
+
+    // 2. OS/VO 画外音 "XXX（OS）" "XXX（VO）"
+    const osMatch = line.match(/^([^\s：:（）()\d]{1,8})[（(]\s*(OS|VO|画外|画外音)\s*[）)]/i);
+    if (osMatch && isChName(osMatch[1])) {
+      addChar(osMatch[1], true);
+      recordHighlight(highlights.mainChars, osMatch[1], allText);
+      continue;
+    }
+
+    // 3. 动作出场：从整行中提取中文人名
+    extractActionChars(line, charStats);
+  }
+
+  // 从全文做二次补充（某些角色只在叙述中出现）
+  extractNarrativeChars(allText, charStats);
+
+  // 分类主要/次要
+  const mainChars = [], minorChars = [];
+
+  // 计算每个角色在全剧中的出现次数（跨场统计在 parseScript 后进行）
+  Object.entries(charStats).forEach(([name, stat]) => {
+    if (isExtra(name)) {
+      minorChars.push(name);
+    } else if (stat.dialogue || stat.actions >= 2) {
+      mainChars.push(name);
+    } else {
+      minorChars.push(name);
+    }
+  });
+
+  // 去重
+  const uniqueMain = [...new Set(mainChars)];
+  const uniqueMinor = [...new Set(minorChars)].filter(n => !uniqueMain.includes(n));
+
+  // ===== 道具提取 v5 =====
+  const props = extractProps(sc.bodyLines, allText, highlights);
+
+  // 内容梗概
+  let summary = '';
+  for (const l of sc.bodyLines) {
+    if (!/：|:/.test(l) && !/^[（(]/.test(l) && l.length > 5) {
+      summary = l.replace(/镜头[一二三\d]*|远景|近景|特写|中景/g, '').substring(0, 55);
+      break;
+    }
+  }
+  if (!summary) summary = sc.bodyLines.filter(l => l.length > 3)[0]?.substring(0, 55) || '';
+
   // 页数
-  const cc = sc.rawText.replace(/[\s\n]/g, '').length;
+  const cc = allText.replace(/[\s\n]/g, '').length;
   const pages = Math.max(0.5, Math.round(cc / 180 * 2) / 2);
 
   return {
     id: Date.now() + parseInt(sc.num) + Math.random() * 100,
     num: sc.num, location, io, dn, pages,
     summary: summary || body.substring(0, 55),
-    mainChars: Array.from(chars).join(' '),
-    minorChars: Array.from(minors).join(' '),
-    props: Array.from(props).join(' '),
+    mainChars: uniqueMain.join(' '),
+    minorChars: uniqueMinor.join(' '),
+    props: props.join(' '),
     costumes: '', rawText: sc.rawText, remark: '',
     highlights: highlights,
     assignedDay: null
   };
+}
+
+// ── 动作角色提取 ──
+function extractActionChars(line, charStats) {
+  // 模式1: "XXX推门进来/走进/出现/坐下..." — 人名+动作动词
+  const actionVerbs = '(?:走进|走出|进来|出去|推门|开门|关门|坐下|站起|起身|离开|来到|到达|出现|消失|回头|转身|停下|走过|路过|穿过|越过|跑来|跑去|冲进来|走出去|迈向)';
+  const re1 = new RegExp('([\\u4e00-\\u9fff]{2,4})' + actionVerbs, 'g');
+  let m;
+  while ((m = re1.exec(line)) !== null) {
+    if (isChName(m[1])) charStats[m[1]] = charStats[m[1]] || { dialogue: false, actions: 0 };
+    if (charStats[m[1]]) charStats[m[1]].actions++;
+  }
+
+  // 模式2: "XXX跟在YYY后面" / "XXX和YYY一起" / "XXX与YYY对视" — 多人互动
+  const interactRe = /([一-鿿]{2,4})(?:和|与|跟|同|还有|以及)([一-鿿]{2,4})(?:一起|对视|握手|拥抱|并行|并肩|相伴|聊天|交谈|说话|吵架|打架|合作|配合|商量|讨论)/g;
+  while ((m = interactRe.exec(line)) !== null) {
+    if (isChName(m[1])) { charStats[m[1]] = charStats[m[1]] || { dialogue: false, actions: 0 }; charStats[m[1]].actions++; }
+    if (isChName(m[2])) { charStats[m[2]] = charStats[m[2]] || { dialogue: false, actions: 0 }; charStats[m[2]].actions++; }
+  }
+
+  // 模式3: "XXX看着YYY" / "XXX帮YYY" — 交互动作
+  const lookRe = /([一-鿿]{2,4})(?:看着|看向|望着|盯着|瞪了|帮|扶|拉住|拦住|追上|赶上|找到|叫住|喊住)([一-鿿]{2,4})/g;
+  while ((m = lookRe.exec(line)) !== null) {
+    if (isChName(m[1])) { charStats[m[1]] = charStats[m[1]] || { dialogue: false, actions: 0 }; charStats[m[1]].actions++; }
+    if (isChName(m[2])) { charStats[m[2]] = charStats[m[2]] || { dialogue: false, actions: 0 }; charStats[m[2]].actions++; }
+  }
+}
+
+// ── 叙述中角色补充 ──
+function extractNarrativeChars(text, charStats) {
+  // 匹配所有可能的人名模式（在动词/介词前后出现的中文词）
+  const patterns = [
+    /([一-鿿]{2,4})[正在已经就也才](?:走|跑|坐|站|躺|看|听|说|笑|哭|想|等|写|吃|喝|拿|放|推|拉|开|关|进|出|来|去)/g,
+    /(?:让|叫|令|使|派|请|喊|命令|要求|示意)([一-鿿]{2,4})/g,
+    /(?:对|向|朝|冲|对着|朝着|冲着)([一-鿿]{2,4})/g,
+  ];
+  patterns.forEach(re => {
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      if (isChName(m[1]) && !charStats[m[1]]) {
+        charStats[m[1]] = { dialogue: false, actions: 1 };
+      }
+    }
+  });
+}
+
+// ── 道具提取 ──
+function extractProps(bodyLines, allText, highlights) {
+  const props = new Set();
+  const propCount = {};
+
+  // 动词+宾语模式（扩展至50+动词）
+  const holdVerbs = '拿着|握着|提着|背着|抱着|举着|夹着|托着|捧着|拎着|扛着|拽着';
+  const interactVerbs = '递给|接过|交给|收到|拿出|掏出|取出|递给|寄给|送给|还给|传给|递给';
+  const placeVerbs = '放在|放到|搁在|摆在|挂在|装进|塞进|放进|投入|倒入|装入|置入';
+  const useVerbs = '打开|关闭|喝下|喝完|吃掉|吃完|写下|记下|画出|看着|盯着|骑着|开着|拨打|接听|穿上|戴上|摘下|脱下|拉开|推上|拧开|盖上|翻开|合上|锁上';
+
+  const allVerbPatterns = [holdVerbs, interactVerbs, placeVerbs, useVerbs].join('|');
+  const verbRe = new RegExp('(?:' + allVerbPatterns + ')([一-鿥a-zA-Z0-9\\u4e00-\\u9fff]{1,6})', 'g');
+
+  let m;
+  while ((m = verbRe.exec(allText)) !== null) {
+    const candidate = m[1];
+    // 过滤：不是人名、不是抽象词
+    if (isValidProp(candidate)) {
+      props.add(candidate);
+      propCount[candidate] = (propCount[candidate] || 0) + 1;
+      recordHighlight(highlights.props, candidate, allText);
+    }
+  }
+
+  // 补充：场景描述中的物品名词
+  const itemPatterns = /(?:桌上|包里|手中|手里|脚下|墙上|地上|椅背上|床上|柜子里)[有放摆挂]着[的]?(?:一个|一只|一把|一张|一瓶|一杯)?([^，。！？\s]{1,8})/g;
+  while ((m = itemPatterns.exec(allText)) !== null) {
+    if (isValidProp(m[1])) props.add(m[1]);
+  }
+
+  return [...props];
+}
+
+function isValidProp(word) {
+  if (!word || word.length < 1 || word.length > 8) return false;
+  // 不是纯标点/数字
+  if (/^[\d\s\.\,，。！？、；：""'']+$/.test(word)) return false;
+  // 不是抽象概念
+  const abstract = /^(方法|方式|感觉|想法|意见|建议|问题|答案|原因|结果|目的|意义|价值|作用|影响|关系|联系|区别|共同|不同|一样|似的|好像|仿佛|突然|忽然|然后|接着|终于|曾经|已经|正在|将要|可以|能够|必须|需要|应该|一定|必须|可能|大概|也许|或许)$/;
+  if (abstract.test(word)) return false;
+  // 不是人名
+  if (isChName(word)) return false;
+  return true;
+}
+
+// ── 关键道具标记 ──
+function markKeyProps(scenes) {
+  const globalPropCount = {};
+  scenes.forEach(s => {
+    (s.props || '').split(/[\s、,]+/).filter(Boolean).forEach(p => {
+      globalPropCount[p] = (globalPropCount[p] || 0) + 1;
+    });
+  });
+
+  // ≥2场出现 → 标记为关键道具
+  scenes.forEach(s => {
+    const props = (s.props || '').split(/[\s、,]+/).filter(Boolean);
+    const keyProps = props.filter(p => globalPropCount[p] >= 2);
+    if (keyProps.length) {
+      s.remark = (s.remark || '') + ' 🔑关键道具: ' + keyProps.join(' ');
+    }
+  });
 }
 
 // 记录实体在原文中的位置
