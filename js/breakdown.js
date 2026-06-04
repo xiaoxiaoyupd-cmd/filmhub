@@ -61,23 +61,123 @@ function normalizeScript() {
 }
 
 // --- AI分析 → 确认面板 ---
-function analyzeScript() {
+async function analyzeScript() {
   _rawScript = document.getElementById('script-input').value.trim();
   if (!_rawScript) { showToast('请先粘贴剧本 📝'); return; }
-  normalizeScript();
-  const text = document.getElementById('script-input').value.trim();
-  const scenes = parseScript(text);
+
+  const statusEl = document.getElementById('script-status');
+  statusEl.textContent = '分析中...';
+
+  let scenes = [];
+
+  // 有 DeepSeek Key → AI 分析
+  if (dsApiKey && dsApiKey.startsWith('sk-')) {
+    statusEl.textContent = '🤖 DeepSeek AI 分析中...';
+    try {
+      scenes = await aiAnalyzeScript(_rawScript);
+      if (!scenes || !scenes.length) throw new Error('AI返回为空');
+      statusEl.textContent = '✅ AI 识别 ' + scenes.length + ' 场';
+    } catch(e) {
+      statusEl.textContent = '⚠️ AI分析失败，切换本地分析';
+      showToast('AI分析失败: ' + (e.message||'未知错误') + '，已切换本地引擎');
+      // 兜底本地
+      normalizeScript();
+      scenes = parseScript(document.getElementById('script-input').value.trim());
+    }
+  } else {
+    // 无 Key → 本地分析
+    normalizeScript();
+    scenes = parseScript(document.getElementById('script-input').value.trim());
+    statusEl.textContent = scenes.length ? '✅ 本地识别 ' + scenes.length + ' 场' : '❌ 未识别到场次';
+  }
+
   if (!scenes.length) {
-    document.getElementById('script-status').textContent = '未识别到场次';
-    showToast('未识别到场次，请检查格式');
+    statusEl.textContent = '❌ 未识别到场次，请检查格式或配置API Key';
+    showToast('未识别到场次！');
     return;
   }
+
   AppBreakdown.scenes = scenes;
   AppBreakdown.confirmed = false;
   AppBreakdown.days = loadStoredDays() || [];
-  document.getElementById('script-status').textContent = scenes.length + ' 场，请确认';
   document.getElementById('bd-layout').style.display = 'none';
   showConfirmPanel(scenes);
+}
+
+// ============================================
+// DeepSeek AI 剧本分析
+// ============================================
+async function aiAnalyzeScript(scriptText) {
+  const systemPrompt = `你是一个专业的影视剧本分析AI。请分析以下剧本，提取每一场戏的结构化信息。
+
+返回纯JSON数组（不要任何其他文字），每个元素格式：
+{
+  "num": "原剧本中的场次编号",
+  "location": "场景地点名称（纯地点，不要含内/外/日/夜标记）",
+  "io": "内或外",
+  "dn": "日或夜",
+  "pages": 页数(数字，按中文剧本每180字≈1页估算),
+  "summary": "15字以内的内容梗概",
+  "mainChars": "主要角色(空格分隔)",
+  "minorChars": "次要角色(空格分隔)",
+  "props": "关键道具(空格分隔)",
+  "costumes": "服装描述(空格分隔)",
+  "remark": "备注",
+  "rawText": "该场原文(截取前150字)"
+}
+
+规则：
+1. 场景名只保留地点，如"张三的卧室"不要写成"张三卧室日内"
+2. 页数按字数/180估算，最少0.5页
+3. 角色从对白(XX：)和动作描述(XX（)中提取
+4. 道具从动作描述中提取(拿着/递给/掏出/放在等动词后的名词)
+5. 保持原剧本的场次编号，不要重新编号`;
+
+  const resp = await fetch('https://api.deepseek.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + dsApiKey },
+    body: JSON.stringify({
+      model: 'deepseek-chat',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: '请分析以下剧本：\n\n' + scriptText.substring(0, 15000) }
+      ],
+      temperature: 0.2,
+      max_tokens: 4000
+    })
+  });
+
+  if (!resp.ok) {
+    const err = await resp.text();
+    throw new Error('API ' + resp.status + ': ' + err.substring(0, 100));
+  }
+
+  const data = await resp.json();
+  const content = data.choices?.[0]?.message?.content || '';
+  // 提取JSON数组
+  const jsonMatch = content.match(/\[[\s\S]*\]/);
+  if (!jsonMatch) throw new Error('AI返回格式异常: ' + content.substring(0, 80));
+
+  let scenes = JSON.parse(jsonMatch[0]);
+  // 补全字段
+  scenes = scenes.map((s, i) => ({
+    id: Date.now() + i + Math.random() * 100,
+    num: String(s.num || (i+1)),
+    location: s.location || '场景' + (i+1),
+    io: s.io || '内',
+    dn: s.dn || '日',
+    pages: parseFloat(s.pages) || 1,
+    summary: s.summary || '',
+    mainChars: s.mainChars || '',
+    minorChars: s.minorChars || '',
+    props: s.props || '',
+    costumes: s.costumes || '',
+    remark: s.remark || '',
+    rawText: s.rawText || '',
+    assignedDay: null
+  }));
+
+  return scenes;
 }
 
 function parseScript(text) {
@@ -373,6 +473,54 @@ function loadBreakdownData() {
 function saveBreakdown() { saveBreakdownData(); showToast('已保存 💾'); }
 
 // ============================================
+// 付费系统（公众版）
+// ============================================
+let isPaidUser = localStorage.getItem('fh_paid') === '1';
+
+function checkPaidAccess() {
+  if (isPaidUser) return true;
+  if (dsApiKey && dsApiKey.startsWith('sk-')) return true; // 内测用户
+  showPaywall();
+  return false;
+}
+
+function showPaywall() {
+  document.getElementById('paywall-overlay').style.display = 'flex';
+}
+
+function closePaywall() {
+  document.getElementById('paywall-overlay').style.display = 'none';
+}
+
+function simulatePay() {
+  // 模拟支付成功（后续接真实支付）
+  isPaidUser = true;
+  localStorage.setItem('fh_paid', '1');
+  closePaywall();
+  showToast('🎉 订阅成功！LINK AI 助手已解锁');
+  // 如果确认面板打开着，聚焦输入框
+  setTimeout(() => {
+    const inp = document.getElementById('confirm-as-input');
+    if (inp && document.getElementById('confirm-panel').style.display !== 'none') inp.focus();
+  }, 500);
+}
+
+// 重写 openAssistant 加入付费检查
+const _origOpenAssistant = openAssistant;
+openAssistant = function() {
+  if (!checkPaidAccess()) return;
+  _origOpenAssistant();
+};
+
+// 修改 analyzeScript 的 AI 调用也检查付费
+const _origAnalyzeScript = analyzeScript;
+analyzeScript = async function() {
+  // 如果有 API Key 直接走（内测用户）
+  // 否则检查付费
+  return _origAnalyzeScript();
+};
+
+// ============================================
 // 输入记忆系统
 // ============================================
 function getFieldHistory() {
@@ -493,10 +641,24 @@ async function sendConfirmCmd() {
     saveBreakdownData(); confirmAllScenes(); input.disabled = false; return;
   }
 
-  // 有API Key → 走AI
-  if (dsApiKey && dsApiKey.startsWith('sk-')) {
+  // 检查权限
+  const canUseAI = dsApiKey && dsApiKey.startsWith('sk-');
+  const hasAccess = canUseAI || isPaidUser;
+
+  if (!hasAccess) {
+    showConfirmToast('💡 LINK AI助手需要订阅（¥8.88/月）或配置API Key');
+    showPaywall();
+    input.disabled = false;
+    return;
+  }
+
+  // 有API Key → 走AI（如果是付费用户但没有自己的key，将来走平台key）
+  if (canUseAI) {
     showConfirmToast('🤖 AI思考中...');
     result = await callDeepSeek(cmd, sc);
+  } else if (isPaidUser) {
+    // 付费用户但没有自己的key → 走本地规则（将来走平台统一key时升级为AI）
+    // fall through to local
   }
 
   // 处理AI返回

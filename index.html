@@ -375,6 +375,30 @@
   </div>
 </div>
 
+<!-- 付费弹窗 -->
+<div class="assistant-overlay" id="paywall-overlay" style="display:none;">
+  <div class="paywall-card">
+    <div class="paywall-close" onclick="closePaywall()">✕</div>
+    <div class="paywall-icon">🤖</div>
+    <h2 class="paywall-title">解锁 LINK AI 助手</h2>
+    <p class="paywall-desc">DeepSeek V4 驱动的智能剧本分析<br>秒级解析 · 角色识别 · 道具提取 · 自然语言交互</p>
+    <div class="paywall-price">
+      <span class="pay-currency">¥</span>
+      <span class="pay-amount">8.88</span>
+      <span class="pay-period">/月</span>
+    </div>
+    <ul class="paywall-features">
+      <li>🎬 AI 智能分析剧本</li>
+      <li>💬 自然语言对话修改</li>
+      <li>👥 自动角色/道具提取</li>
+      <li>📊 顺场表一键生成</li>
+      <li>🔄 无限次使用</li>
+    </ul>
+    <button class="btn btn-primary btn-lg" style="width:100%;" onclick="simulatePay()">💳 立即订阅 ¥8.88/月</button>
+    <p class="paywall-note">内测用户请配置 API Key 直接使用<br>公众版即将开放</p>
+  </div>
+</div>
+
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
