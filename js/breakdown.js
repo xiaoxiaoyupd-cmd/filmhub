@@ -245,30 +245,38 @@ function buildScene(sc) {
   else if (m2) { dn = m2[1]; io = m2[2]; header = header.replace(m2[0], '').trim(); }
   const location = header.replace(/[\s　]+/g, ' ').trim() || ('场景' + sc.num);
 
-  // 内容梗概：找第一句非对白描述
+  // 内容梗概
   const bodyLines = sc.bodyLines.filter(l => l.length > 3);
   let summary = '';
   for (const l of bodyLines) { if (!/：|:/.test(l) && l.length > 5) { summary = l.substring(0, 55); break; } }
   if (!summary && bodyLines.length) summary = bodyLines[0].substring(0, 55);
 
-  // 角色
+  // 角色 + 位置追踪
   const chars = new Set(), minors = new Set(), props = new Set();
+  const highlights = { mainChars: {}, minorChars: {}, props: {} };
+
   for (const l of bodyLines) {
+    // 对白提取: "XXX："
     const dm = l.match(/^([^\s：:（）()\d]{1,8})[：:]/);
-    if (dm && !/^(INT|EXT|DAY|NIGHT|第|场|内|外|日|夜|OS|VO)$/i.test(dm[1])) chars.add(dm[1]);
+    if (dm && !/^(INT|EXT|DAY|NIGHT|第|场|内|外|日|夜|OS|VO)$/i.test(dm[1])) {
+      chars.add(dm[1]);
+      recordHighlight(highlights.mainChars, dm[1], sc.rawText);
+    }
+    // 动作提取: "XXX（"
     const am = l.match(/^([^\s：:（）()\d]{1,8})[（(]/);
-    if (am && am[1].length < 6) chars.add(am[1]);
-    ['拿着','递给','掏出','放在','取出','端起','放下','打开'].forEach(v => {
+    if (am && am[1].length < 6) {
+      chars.add(am[1]);
+      recordHighlight(highlights.mainChars, am[1], sc.rawText);
+    }
+    // 道具提取 + 位置
+    ['拿着','递给','掏出','放在','取出','端起','放下','打开','背着','挂着','提着','握着'].forEach(v => {
       const pm = l.match(new RegExp(v+'([一-鿥a-zA-Z0-9]{1,8})'));
-      if (pm) props.add(pm[1]);
+      if (pm) {
+        props.add(pm[1]);
+        recordHighlight(highlights.props, pm[1], sc.rawText);
+      }
     });
   }
-  // 次要角色：描述中第三人
-  const nmMatch = body.match(/(?:走进|进来|出去|推门|突然|看见)[^。！？\n]{1,15}([一-鿿]{2,4})(?:站|说|看|走|拿)/g);
-  if (nmMatch) nmMatch.forEach(n => {
-    const nm = n.replace(/走进|进来|出去|推门|突然|看见/g,'').match(/([一-鿿]{2,4})/);
-    if (nm && !chars.has(nm[1])) minors.add(nm[1]);
-  });
 
   // 页数
   const cc = sc.rawText.replace(/[\s\n]/g, '').length;
@@ -281,8 +289,23 @@ function buildScene(sc) {
     mainChars: Array.from(chars).join(' '),
     minorChars: Array.from(minors).join(' '),
     props: Array.from(props).join(' '),
-    costumes: '', rawText: sc.rawText, remark: '', assignedDay: null
+    costumes: '', rawText: sc.rawText, remark: '',
+    highlights: highlights,
+    assignedDay: null
   };
+}
+
+// 记录实体在原文中的位置
+function recordHighlight(map, keyword, text) {
+  if (!keyword || keyword.length < 2) return;
+  if (map[keyword]) return; // 已记录
+  const positions = [];
+  let idx = text.indexOf(keyword);
+  while (idx !== -1) {
+    positions.push([idx, idx + keyword.length]);
+    idx = text.indexOf(keyword, idx + 1);
+  }
+  map[keyword] = positions;
 }
 
 // --- 确认面板 ---
@@ -310,17 +333,19 @@ function showConfirmPanel(scenes) {
         <label>内容梗概</label><input value="${esc(sc.summary)}" data-idx="${i}" data-field="summary" style="flex:1;" list="hist-summary"><datalist id="hist-summary">${(hist.summary||[]).map(v=>'<option value="'+esc(v)+'">').join('')}</datalist>
       </div>
       <div class="confirm-row">
-        <label>主要角色</label><input value="${esc(sc.mainChars)}" data-idx="${i}" data-field="mainChars" list="hist-mainChars"><datalist id="hist-mainChars">${(hist.mainChars||[]).map(v=>'<option value="'+esc(v)+'">').join('')}</datalist>
+        <label>主要角色</label><input value="${esc(sc.mainChars)}" data-idx="${i}" data-field="mainChars" list="hist-mainChars"><datalist id="hist-mainChars">${(hist.mainChars||[]).map(v=>'<option value="'+esc(v)+'">').join('')}</datalist><span class="trace-btn" onclick="traceToSource(${i},'mainChars','')" title="在原文中追溯">📍</span>
         <label>次要角色</label><input value="${esc(sc.minorChars)}" data-idx="${i}" data-field="minorChars" list="hist-minorChars"><datalist id="hist-minorChars">${(hist.minorChars||[]).map(v=>'<option value="'+esc(v)+'">').join('')}</datalist>
       </div>
       <div class="confirm-row">
-        <label>道具</label><input value="${esc(sc.props)}" data-idx="${i}" data-field="props" list="hist-props"><datalist id="hist-props">${(hist.props||[]).map(v=>'<option value="'+esc(v)+'">').join('')}</datalist>
+        <label>道具</label><input value="${esc(sc.props)}" data-idx="${i}" data-field="props" list="hist-props"><datalist id="hist-props">${(hist.props||[]).map(v=>'<option value="'+esc(v)+'">').join('')}</datalist><span class="trace-btn" onclick="traceToSource(${i},'props','')" title="在原文中追溯">📍</span>
         <label>服装</label><input value="${esc(sc.costumes)}" data-idx="${i}" data-field="costumes" list="hist-costumes"><datalist id="hist-costumes">${(hist.costumes||[]).map(v=>'<option value="'+esc(v)+'">').join('')}</datalist>
       </div>
       <div class="confirm-row">
         <label>备注</label><input value="${esc(sc.remark)}" data-idx="${i}" data-field="remark" list="hist-remark"><datalist id="hist-remark">${(hist.remark||[]).map(v=>'<option value="'+esc(v)+'">').join('')}</datalist>
       </div>
-      <details class="confirm-raw"><summary>剧本原文</summary><pre>${esc(sc.rawText)}</pre></details>
+      <details class="confirm-raw" id="raw-${i}"><summary>📄 剧本原文（点击角色/道具可追溯）</summary>
+        <div class="raw-text-wrap" id="raw-text-${i}" onmouseup="onRawTextSelect(event, ${i})" oncontextmenu="onRawTextSelect(event, ${i});return false;">${renderHighlightedText(sc, i)}</div>
+      </details>
     </div>
   `).join('');
 
@@ -501,6 +526,149 @@ function loadBreakdownData() {
   } catch(e) {}
 }
 function saveBreakdown() { saveBreakdownData(); showToast('已保存 💾'); }
+
+// ============================================
+// 高亮追溯 + 右键标记
+// ============================================
+
+// 渲染带高亮标签的原文
+function renderHighlightedText(sc, sceneIdx) {
+  let text = esc(sc.rawText);
+  const hl = sc.highlights || {};
+
+  // 收集所有高亮位置
+  const marks = [];
+
+  // 主要角色高亮 — 蓝色
+  Object.entries(hl.mainChars || {}).forEach(([name, positions]) => {
+    positions.forEach(([s, e]) => {
+      marks.push({ start: s, end: e, name, type: 'char' });
+    });
+  });
+
+  // 道具高亮 — 橙色
+  Object.entries(hl.props || {}).forEach(([name, positions]) => {
+    positions.forEach(([s, e]) => {
+      marks.push({ start: s, end: e, name, type: 'prop' });
+    });
+  });
+
+  // 按位置排序（从后往前替换，避免偏移）
+  marks.sort((a, b) => b.start - a.start);
+
+  let result = text;
+  marks.forEach(m => {
+    const cls = m.type === 'char' ? 'hl-char' : 'hl-prop';
+    const before = result.substring(0, m.start);
+    const highlighted = '<mark class="' + cls + '" data-type="' + m.type + '" data-name="' + esc(m.name) + '" data-scene="' + sceneIdx + '" title="' + (m.type==='char'?'角色':'道具') + ': ' + esc(m.name) + '">' + result.substring(m.start, m.end) + '</mark>';
+    const after = result.substring(m.end);
+    result = before + highlighted + after;
+  });
+
+  return result || text;
+}
+
+// 追溯：从表格/表单点击 → 高亮原文
+function traceToSource(sceneIdx, fieldType, keyword) {
+  // 展开对应场的原文
+  const rawDetail = document.getElementById('raw-' + sceneIdx);
+  if (rawDetail) rawDetail.open = true;
+
+  // 移除之前的高亮
+  document.querySelectorAll('.raw-text-wrap mark.hl-active').forEach(m => m.classList.remove('hl-active'));
+
+  // 高亮匹配的关键词
+  setTimeout(() => {
+    const wrap = document.getElementById('raw-text-' + sceneIdx);
+    if (!wrap) return;
+    const marks = wrap.querySelectorAll('mark');
+    marks.forEach(m => {
+      if (m.dataset.name === keyword || m.textContent.includes(keyword)) {
+        m.classList.add('hl-active');
+        m.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    });
+  }, 200);
+}
+
+// 右键菜单
+let ctxMenu = null;
+function onRawTextSelect(event, sceneIdx) {
+  const selection = window.getSelection();
+  const selectedText = selection.toString().trim();
+
+  // 移除旧菜单
+  if (ctxMenu) { ctxMenu.remove(); ctxMenu = null; }
+
+  if (!selectedText || selectedText.length < 2 || selectedText.length > 15) return;
+
+  // 创建右键菜单
+  ctxMenu = document.createElement('div');
+  ctxMenu.className = 'ctx-menu';
+  ctxMenu.innerHTML = `
+    <div class="ctx-item" onclick="markAsEntity(${sceneIdx},'mainChars','${esc(selectedText)}')">👤 添加至主要角色</div>
+    <div class="ctx-item" onclick="markAsEntity(${sceneIdx},'minorChars','${esc(selectedText)}')">👥 添加至次要角色</div>
+    <div class="ctx-item" onclick="markAsEntity(${sceneIdx},'props','${esc(selectedText)}')">🎒 标记为道具</div>
+    <div class="ctx-item" onclick="markAsEntity(${sceneIdx},'costumes','${esc(selectedText)}')">👗 标记为服装</div>
+  `;
+  ctxMenu.style.left = event.pageX + 'px';
+  ctxMenu.style.top = event.pageY + 'px';
+  document.body.appendChild(ctxMenu);
+
+  // 点击其他地方关闭
+  setTimeout(() => {
+    document.addEventListener('click', function closeCtx() {
+      if (ctxMenu) { ctxMenu.remove(); ctxMenu = null; }
+      document.removeEventListener('click', closeCtx);
+    }, { once: true });
+  }, 100);
+}
+
+function markAsEntity(sceneIdx, field, value) {
+  if (ctxMenu) { ctxMenu.remove(); ctxMenu = null; }
+  const sc = AppBreakdown.scenes[sceneIdx];
+  if (!sc) return;
+
+  // 添加到对应字段
+  const existing = (sc[field] || '').split(/[\s、,]+/).filter(Boolean);
+  if (!existing.includes(value)) {
+    existing.push(value);
+    sc[field] = existing.join(' ');
+    refreshConfirmInputs();
+    saveBreakdownData();
+
+    // 收集训练数据
+    collectTrainingData(sceneIdx, field, value, sc.rawText);
+
+    showConfirmToast('✅ 已标记: ' + value + ' → ' + ({mainChars:'主要角色',minorChars:'次要角色',props:'道具',costumes:'服装'}[field] || field));
+  }
+}
+
+// 训练数据收集
+function collectTrainingData(sceneIdx, field, value, rawText) {
+  let training = [];
+  try { training = JSON.parse(localStorage.getItem('fh_training') || '[]'); } catch(e) {}
+  training.push({
+    time: new Date().toISOString(),
+    sceneIdx, field, value,
+    textSnippet: rawText?.substring(0, 300)
+  });
+  // 只保留最近500条
+  if (training.length > 500) training = training.slice(-500);
+  localStorage.setItem('fh_training', JSON.stringify(training));
+}
+
+// 存储训练数据
+function exportTrainingData() {
+  const training = JSON.parse(localStorage.getItem('fh_training') || '[]');
+  const blob = new Blob([JSON.stringify(training, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'prodlink-training-' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('已导出 ' + training.length + ' 条训练数据 📊');
+}
 
 // ============================================
 // 付费系统（公众版）
