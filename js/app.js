@@ -513,6 +513,18 @@ function init() {
   loadCallSheetDraft();
   loadBreakdownData();
 
+  // URL分享协作：自动检测导入
+  if (window.location.hash.startsWith('#import=')) {
+    setTimeout(() => {
+      if (typeof autoImportFromURL === 'function') {
+        const imported = autoImportFromURL();
+        if (imported) {
+          switchTool('schedule');
+        }
+      }
+    }, 600);
+  }
+
   // 点击侧边栏外部关闭（移动端）
   document.getElementById('app').addEventListener('click', (e) => {
     const sidebar = document.getElementById('sidebar');

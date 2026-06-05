@@ -365,12 +365,20 @@ function isChName(word) {
   // 黑名单：不是人名的常见词
   const BANNED = new Set([
     '镜头','远景','近景','特写','中景','全景','跟拍','移动','入画','出画','画外','旁白','空镜',
-    '字幕','切换','淡入','淡出','转场','叠化','切至','杭州','上海','北京','广州','深圳',
-    '清晨','黄昏','傍晚','凌晨','中午','下午','晚上','白天','夜晚','今天','明天','昨天',
-    '他们','她们','我们','你们','自己','大家','有人','有人','忽然','突然','然后','接着',
-    '外面','里面','旁边','前面','后面','上面','下面','远处','近处','这里','那里','哪里',
+    '字幕','切换','淡入','淡出','转场','叠化','切至','杭州','上海','北京','广州','深圳','纽约','巴黎','东京','伦敦',
+    '清晨','黄昏','傍晚','凌晨','中午','下午','晚上','白天','夜晚','今天','明天','昨天','前天','后天','周末','星期',
+    '他们','她们','我们','你们','自己','大家','有人','忽然','突然','然后','接着','于是','但是','然而','可是',
+    '外面','里面','旁边','前面','后面','上面','下面','远处','近处','这里','那里','哪里','门口','窗前','窗外',
+    '桌上','地上','墙上','床上','手里','心里','眼里','嘴边','身边','身旁','耳边','身后','面前','跟前','膝下',
     '穿着','戴着','拿着','背着','提着','看见','听见','闻到','觉得','好像','仿佛','似乎',
-    '什么','怎么','为什么','非常','十分','比较','稍微','已经','正在','将要','没有','还是'
+    '什么','怎么','为什么','非常','十分','比较','稍微','已经','正在','将要','没有','还是',
+    '也许','可能','大概','应该','必须','需要','能够','可以','一定','总是','经常','偶尔','不断',
+    '继续','开始','结束','停下','起来','下来','过去','过来','回来','回去','出去','进来',
+    '慢慢','渐渐','忽然间','突然间','一下子','一刹那','顿时','瞬间','顷刻','片刻','不久',
+    '整个','全部','所有','每个','每张','每人','每次','每种','各种','一些','一点','很大','很小',
+    '分明','明显','显然','似乎','确实','真的','完全','根本','简直','实在','反正','毕竟',
+    '场景','画面','荧幕','银幕','屏幕','空间','房间','屋子','走廊','楼梯','电梯','窗户',
+    '想着','想起','想到','听到','听到','嗅到','感到','发觉','发现','觉得','认为','以为'
   ]);
   if (BANNED.has(word)) return false;
   // 姓在常见姓氏表中，提高置信度
@@ -415,11 +423,83 @@ function parseScript(text) {
   }
   if (cur && cur.bodyLines.length > 0) scenes.push(buildScene(cur));
 
-  // 后处理：标记关键道具（≥2场出现）
+  // 后处理：跨场次角色重分类 + 关键道具标记
+  crossSceneCharReclassify(scenes);
   markKeyProps(scenes);
 
   return scenes;
 }
+
+// ── 跨场次角色重分类 ──
+function crossSceneCharReclassify(scenes) {
+  // 统计每个角色在全剧中的出场信息
+  const globalStats = {}; // {name: {totalScenes:int, dialogueScenes:int, firstScene:int}}
+
+  scenes.forEach((s, si) => {
+    const allChars = [
+      ...(s.mainChars || '').split(/[\s、,]+/).filter(Boolean),
+      ...(s.minorChars || '').split(/[\s、,]+/).filter(Boolean)
+    ];
+    allChars.forEach(name => {
+      if (!globalStats[name]) globalStats[name] = { totalScenes: 0, dialogueScenes: 0, firstScene: si };
+      globalStats[name].totalScenes++;
+    });
+    // 有对白的角色（mainChars 中检测到的有台词角色）
+    (s.mainChars || '').split(/[\s、,]+/).filter(Boolean).forEach(name => {
+      if (globalStats[name]) globalStats[name].dialogueScenes++;
+    });
+  });
+
+  // 重新判定每场的主/次要角色
+  scenes.forEach(s => {
+    const currentMain = (s.mainChars || '').split(/[\s、,]+/).filter(Boolean);
+    const currentMinor = (s.minorChars || '').split(/[\s、,]+/).filter(Boolean);
+    const newMain = [];
+    const newMinor = [];
+
+    // 所有角色重新分类
+    const allInScene = [...new Set([...currentMain, ...currentMinor])];
+    allInScene.forEach(name => {
+      const gs = globalStats[name];
+      if (!gs) { newMinor.push(name); return; }
+
+      // 泛指角色/群演 → 始终次要
+      if (isExtra(name)) { newMinor.push(name); return; }
+
+      // ≥2场有对白 → 主要角色
+      if (gs.dialogueScenes >= 2) { newMain.push(name); return; }
+
+      // 出场≥4场 → 主要角色（即使无对白也是常驻角色）
+      if (gs.totalScenes >= 4) { newMain.push(name); return; }
+
+      // 1场有对白 + ≥2场出场 → 主要角色
+      if (gs.dialogueScenes >= 1 && gs.totalScenes >= 2) { newMain.push(name); return; }
+
+      // 1场有对白 → 主要角色
+      if (gs.dialogueScenes >= 1) { newMain.push(name); return; }
+
+      // 其余 → 次要角色
+      newMinor.push(name);
+    });
+
+    s.mainChars = [...new Set(newMain)].join(' ');
+    s.minorChars = [...new Set(newMinor.filter(n => !newMain.includes(n)))].join(' ');
+  });
+
+  // 追加全局角色分析到首场备注
+  if (scenes.length > 0) {
+    const mainRoles = Object.entries(globalStats)
+      .filter(([, gs]) => gs.dialogueScenes >= 2 || gs.totalScenes >= 3)
+      .sort((a, b) => b[1].totalScenes - a[1].totalScenes)
+      .map(([name, gs]) => `${name}(${gs.totalScenes}场${gs.dialogueScenes >= 1 ? '/' + gs.dialogueScenes + '对白' : ''})`);
+    if (mainRoles.length) {
+      const existingRemark = scenes[0].remark || '';
+      if (!existingRemark.includes('👥全剧角色:')) {
+        scenes[0].remark = (existingRemark + ' 👥全剧角色: ' + mainRoles.join(' ')).trim();
+      }
+    }
+  }
+} // end crossSceneCharReclassify
 
 function normalizeScriptFormat(text) {
   // 第X场 → 数字
@@ -550,7 +630,7 @@ function buildScene(sc) {
 // ── 动作角色提取 ──
 function extractActionChars(line, charStats) {
   // 模式1: "XXX推门进来/走进/出现/坐下..." — 人名+动作动词
-  const actionVerbs = '(?:走进|走出|进来|出去|推门|开门|关门|坐下|站起|起身|离开|来到|到达|出现|消失|回头|转身|停下|走过|路过|穿过|越过|跑来|跑去|冲进来|走出去|迈向)';
+  const actionVerbs = '(?:走进|走出|进来|出去|推门|开门|关门|坐下|站起|起身|离开|来到|到达|出现|消失|回头|转身|停下|走过|路过|穿过|越过|跑来|跑去|冲进来|走出去|迈向|躺在床上|坐在|站在|蹲在|靠在|趴在|盯着|看着|望着|听着|翻着|写着|吃着|喝着|拿着|掏出|举起|放下|拾起|捡起|指向|指向窗外|指向远处|抬头|低头|回头|睁眼|闭眼|深呼吸|叹气|笑了笑|皱了皱眉|摆了摆手|摇了摇头|点了点头)';
   const re1 = new RegExp('([\\u4e00-\\u9fff]{2,4})' + actionVerbs, 'g');
   let m;
   while ((m = re1.exec(line)) !== null) {
@@ -571,15 +651,39 @@ function extractActionChars(line, charStats) {
     if (isChName(m[1])) { charStats[m[1]] = charStats[m[1]] || { dialogue: false, actions: 0 }; charStats[m[1]].actions++; }
     if (isChName(m[2])) { charStats[m[2]] = charStats[m[2]] || { dialogue: false, actions: 0 }; charStats[m[2]].actions++; }
   }
+
+  // 模式4: "XXX和YYY在冲咖啡/XXX、YYY一起..." — 并列人名+任意动作
+  // 先尝试2人并列
+  const pairRe = /([一-鿿]{2,4})(?:和|与|跟)([一-鿿]{2,4})(?:在|正在|一起|一同|一块|并肩|一道|共同|都|也|就|便|刚|已经)/g;
+  while ((m = pairRe.exec(line)) !== null) {
+    if (isChName(m[1])) { charStats[m[1]] = charStats[m[1]] || { dialogue: false, actions: 0 }; charStats[m[1]].actions++; }
+    if (isChName(m[2])) { charStats[m[2]] = charStats[m[2]] || { dialogue: false, actions: 0 }; charStats[m[2]].actions++; }
+  }
+  // 再尝试3人及以上并列: "XXX、YYY、ZZZ一起..."
+  const multiRe = /([一-鿿]{2,4})[、，]([一-鿿]{2,4})(?:[、，]([一-鿿]{2,4}))?(?:[、，]([一-鿿]{2,4}))?(?:一起|在|都|也|就|便|刚|已经|正在)/g;
+  while ((m = multiRe.exec(line)) !== null) {
+    for (let i = 1; i <= 4; i++) {
+      if (m[i] && isChName(m[i])) { charStats[m[i]] = charStats[m[i]] || { dialogue: false, actions: 0 }; charStats[m[i]].actions++; }
+    }
+  }
 }
 
 // ── 叙述中角色补充 ──
 function extractNarrativeChars(text, charStats) {
   // 匹配所有可能的人名模式（在动词/介词前后出现的中文词）
   const patterns = [
-    /([一-鿿]{2,4})[正在已经就也才](?:走|跑|坐|站|躺|看|听|说|笑|哭|想|等|写|吃|喝|拿|放|推|拉|开|关|进|出|来|去)/g,
+    // 人名 + 副词 + 动作
+    /([一-鿿]{2,4})(?:正在|已经|正要|刚|就|也|才|忽然|突然|连忙|赶紧)(?:走|跑|坐|站|躺|看|听|说|笑|哭|想|等|写|吃|喝|拿|放|推|拉|开|关|进|出|来|去)/g,
+    // 使令动词 + 人名
     /(?:让|叫|令|使|派|请|喊|命令|要求|示意)([一-鿿]{2,4})/g,
+    // 介词 + 人名
     /(?:对|向|朝|冲|对着|朝着|冲着)([一-鿿]{2,4})/g,
+    // 人名 + 直接动作（无副词间隔）
+    /([一-鿿]{2,4})(?:推开门|拉开门|关上门|推开窗|拉开窗帘|点起烟|端起杯|放下笔|挂掉电话|拿起手机|掏出一根|递给|接过|抢过|夺下|扔下|摔门|拍桌|站起身|回过身|转过身|低下头|抬起头|摇摇头|点点头|摆摆手|挥挥手|推开|拉回|按下|拨通|挂断|拨出)/g,
+    // 所有格 → 角色在场（如"妈妈的手机"→妈妈）
+    /([一-鿿]{2,4})的(?:手机|包|手|怀里|手中|身边|身后|心里|眼里)/g,
+    // 人名在否定句中
+    /([一-鿿]{2,4})(?:没有|不在|不|别|没)(?:说话|吭声|动|出声|回应|回答|理|抬头|睁眼)/g,
   ];
   patterns.forEach(re => {
     let m;
@@ -603,7 +707,7 @@ function extractProps(bodyLines, allText, highlights) {
   const useVerbs = '打开|关闭|喝下|喝完|吃掉|吃完|写下|记下|画出|看着|盯着|骑着|开着|拨打|接听|穿上|戴上|摘下|脱下|拉开|推上|拧开|盖上|翻开|合上|锁上';
 
   const allVerbPatterns = [holdVerbs, interactVerbs, placeVerbs, useVerbs].join('|');
-  const verbRe = new RegExp('(?:' + allVerbPatterns + ')([一-鿥a-zA-Z0-9\\u4e00-\\u9fff]{1,6})', 'g');
+  const verbRe = new RegExp('(?:' + allVerbPatterns + ')([^\s，。！？、：；""''\\(\\)（）\\[\\]【】\\.\\,\\!\\?\\:\\;\\-]{1,6})', 'g');
 
   let m;
   while ((m = verbRe.exec(allText)) !== null) {
@@ -629,8 +733,8 @@ function isValidProp(word) {
   if (!word || word.length < 1 || word.length > 8) return false;
   // 不是纯标点/数字
   if (/^[\d\s\.\,，。！？、；：""'']+$/.test(word)) return false;
-  // 不是抽象概念
-  const abstract = /^(方法|方式|感觉|想法|意见|建议|问题|答案|原因|结果|目的|意义|价值|作用|影响|关系|联系|区别|共同|不同|一样|似的|好像|仿佛|突然|忽然|然后|接着|终于|曾经|已经|正在|将要|可以|能够|必须|需要|应该|一定|必须|可能|大概|也许|或许)$/;
+  // 不是抽象概念/环境/天气/情绪
+  const abstract = /^(方法|方式|感觉|想法|意见|建议|问题|答案|原因|结果|目的|意义|价值|作用|影响|关系|联系|区别|共同|不同|一样|似的|好像|仿佛|突然|忽然|然后|接着|终于|曾经|已经|正在|将要|可以|能够|必须|需要|应该|一定|必须|可能|大概|也许|或许|阳光|雨水|雨|风|雪|雾|雷电|闪电|冰雹|霜|露水|月光|灯光|日光|树影|影子|天空|地面|空气|气息|气氛|温度|湿度|灰尘|泥土|沙石|声音|回音|脚步声|铃声|鸣笛|鸟叫|虫鸣|风声|雨声|雷声|雪花|气氛|气势|气场|目光|眼神|神情|表情|语气|语调|口气|心情|情绪|念头|思绪|决心|勇气|恐惧|愤怒|悲伤|喜悦|兴奋|忐忑|尴尬|羞涩|愧疚|声音|呼吸|心跳|脉搏|血液|眼泪|汗水|口水|体温|力气|劲儿)$/;
   if (abstract.test(word)) return false;
   // 不是人名
   if (isChName(word)) return false;
@@ -890,6 +994,146 @@ function loadBreakdownData() {
   } catch(e) {}
 }
 function saveBreakdown() { saveBreakdownData(); showToast('已保存 💾'); }
+
+// ============================================
+// URL 分享协作
+// ============================================
+
+// Unicode-safe base64 encode
+function utoa(str) {
+  return btoa(unescape(encodeURIComponent(str)));
+}
+function atou(b64) {
+  return decodeURIComponent(escape(atob(b64)));
+}
+
+// 导出为分享URL
+function shareBreakdown() {
+  const data = {
+    v: 1, // 版本号
+    scenes: AppBreakdown.scenes.map(s => ({
+      num: s.num, location: s.location, io: s.io, dn: s.dn,
+      pages: s.pages, summary: s.summary,
+      mainChars: s.mainChars, minorChars: s.minorChars,
+      props: s.props, costumes: s.costumes, remark: s.remark,
+      rawText: s.rawText, // 保留原文以便对方也能编辑
+      highlights: s.highlights
+    })),
+    days: AppBreakdown.days
+  };
+
+  const json = JSON.stringify(data);
+  const encoded = utoa(json);
+
+  // 如果数据太大，裁掉 rawText 再试一次
+  if (encoded.length > 1800) {
+    data.scenes.forEach(s => { s.rawText = (s.rawText || '').substring(0, 150); });
+    const json2 = JSON.stringify(data);
+    const encoded2 = utoa(json2);
+    if (encoded2.length > 1800) {
+      // 仍然太大，提供剪贴板方案
+      copyToClipboard(encoded2);
+      showToast('数据较大，已复制到剪贴板 📋 发给对方后在"加入项目"中粘贴');
+      return;
+    }
+    const shareUrl = window.location.origin + window.location.pathname + '#import=' + encoded2;
+    copyToClipboard(shareUrl);
+    showToast('分享链接已复制 📋 发给团队成员即可');
+    return;
+  }
+
+  const shareUrl = window.location.origin + window.location.pathname + '#import=' + encoded;
+  copyToClipboard(shareUrl);
+  showToast('分享链接已复制 📋 发给团队成员即可');
+}
+
+// 加入协作项目（手动粘贴数据）
+function joinProject() {
+  const data = prompt('请粘贴分享链接或数据码：');
+  if (!data) return;
+  // 可能是完整URL或纯数据
+  let encoded = data;
+  const hashMatch = data.match(/#import=(.+)/);
+  if (hashMatch) encoded = hashMatch[1];
+  importBreakdownData(encoded);
+}
+
+// 从URL自动导入
+function autoImportFromURL() {
+  const hash = window.location.hash;
+  if (!hash.startsWith('#import=')) return false;
+  const encoded = hash.substring(8);
+  return importBreakdownData(encoded);
+}
+
+function importBreakdownData(encoded) {
+  try {
+    const json = atou(encoded);
+    const data = JSON.parse(json);
+
+    if (!data.scenes || !data.scenes.length) {
+      showToast('数据无效或为空');
+      return false;
+    }
+
+    // 确认导入
+    const existingCount = AppBreakdown.scenes.length;
+    const importCount = data.scenes.length;
+
+    let msg = '发现协作项目：\n' + importCount + ' 场戏';
+    if (data.days && data.days.length) msg += '\n' + data.days.length + ' 个拍摄日';
+    if (existingCount > 0) msg += '\n\n⚠️ 当前已有 ' + existingCount + ' 场，导入将覆盖现有数据';
+
+    if (!confirm(msg + '\n\n确定导入吗？')) return false;
+
+    // 导入数据
+    AppBreakdown.scenes = data.scenes;
+    AppBreakdown.days = data.days || [];
+    AppBreakdown.confirmed = true;
+
+    saveBreakdownData();
+
+    // 刷新UI
+    document.getElementById('bd-layout').style.display = 'block';
+    document.getElementById('ai-suggest').style.display = 'flex';
+    document.getElementById('assistant-bar').style.display = 'block';
+    document.getElementById('confirm-panel').style.display = 'none';
+    updateSuggestCard();
+    renderSceneTable();
+    renderSameLocationTable();
+    renderDayPanels();
+
+    // 清理URL hash
+    if (window.history && window.history.replaceState) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+
+    showToast('已导入 ' + importCount + ' 场 ✅ 可以开始协作编辑了');
+    return true;
+  } catch(e) {
+    showToast('数据解析失败，请检查复制的内容是否完整');
+    console.error('Import error:', e);
+    return false;
+  }
+}
+
+function copyToClipboard(text) {
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+}
+
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed'; ta.style.left = '-9999px';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); } catch(e) {}
+  document.body.removeChild(ta);
+}
 
 // ============================================
 // 高亮追溯 + 右键标记
