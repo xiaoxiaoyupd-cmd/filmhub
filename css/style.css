@@ -959,6 +959,26 @@ body {
 .budget-num { font-size: 1.3rem; font-weight: 900; color: var(--primary); }
 .budget-label { font-size: 0.72rem; color: var(--text2); margin-top: 2px; font-weight: 600; }
 
+/* ============================================
+   协作栏
+   ============================================ */
+.collab-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 16px;
+  background: #FAFBFC;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 20px;
+  flex-wrap: wrap; gap: 6px;
+}
+.collab-status {
+  font-size: 0.78rem; font-weight: 600; color: var(--text);
+  display: flex; align-items: center; gap: 6px;
+}
+.collab-actions {
+  display: flex; gap: 6px;
+}
+
 /* 响应式 */
 @media (max-width: 1000px) {
   .dual-tables { grid-template-columns: 1fr; }
