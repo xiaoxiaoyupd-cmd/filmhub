@@ -707,7 +707,7 @@ function extractProps(bodyLines, allText, highlights) {
   const useVerbs = '打开|关闭|喝下|喝完|吃掉|吃完|写下|记下|画出|看着|盯着|骑着|开着|拨打|接听|穿上|戴上|摘下|脱下|拉开|推上|拧开|盖上|翻开|合上|锁上';
 
   const allVerbPatterns = [holdVerbs, interactVerbs, placeVerbs, useVerbs].join('|');
-  const verbRe = new RegExp('(?:' + allVerbPatterns + ')([^\s，。！？、：；""''\\(\\)（）\\[\\]【】\\.\\,\\!\\?\\:\\;\\-]{1,6})', 'g');
+  const verbRe = new RegExp('(?:' + allVerbPatterns + ')([^\\s\\u3000-\\u303f\\uff00-\\uffef\\(\\)\\[\\]【】\\{\\}<>《》\\"\\\'\\.\\,\\!\\?\\:\\;\\-]{1,6})', 'g');
 
   let m;
   while ((m = verbRe.exec(allText)) !== null) {
