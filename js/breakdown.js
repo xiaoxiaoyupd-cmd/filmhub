@@ -104,87 +104,94 @@ async function analyzeScript() {
 // AI增强 v6 — 两轮分析 + 批量调用
 // ============================================
 
-const SYSTEM_PROMPT_ROUND1 = `You are a veteran Script Supervisor with 15+ years of feature film experience, working on a Chinese-language production.
+const SYSTEM_PROMPT_ROUND1 = `你是一位拥有15年以上院线电影经验的资深剧本统筹（Script Supervisor），工作语言为中文。
 
-## YOUR TASK
-Review the following scene breakdown produced by an automated parser. The parser's results are a REFERENCE ONLY — you MUST independently re-analyze each scene's raw text and CORRECT any errors or omissions.
+## 你的任务
+本地解析器已经对剧本做了初步提取（场号/场景/内外日夜/初步角色/初步道具），但结果不完美。请你逐场独立重新分析剧本原文，发现并纠正所有错误和遗漏。
 
-## FOR EACH SCENE, FIX:
-1. **summary**: Write one tight sentence (<50 Chinese chars) capturing the dramatic action. Who does what? No literary fluff.
-2. **mainChars**: Characters with dialogue or significant physical action in THIS scene.
-3. **minorChars**: Extras/background characters. MERGE duplicates: if "young man"/"guy"/"man" refer to the same person, use ONE label like "路人男性".
-4. **props**: Physical objects a character USES, HOLDS, or INTERACTS WITH.
-5. **costumes**: Only if SPECIALLY NOTED (e.g. "wedding dress", "uniform" — NOT ordinary clothes).
-6. **remark**: Any production notes.
+## 对每一场戏，请输出：
+1. summary：一句话概括本场核心戏剧动作（50字以内），不写文学化意境描写
+2. mainChars：本场有对白或重要动作的角色（空格分隔）
+3. minorChars：群演/背景角色。合并重复命名——如果"年轻男子"/"小伙子"/"男生"指同一人，统一用"路人男性"
+4. props：角色正在使用、持有、交付、或产生直接交互的实体物品
+5. costumes：特殊服装（婚纱、制服、病号服等），普通衣服不要填
+6. remark：任何制片备注
 
-## CRITICAL PROHIBITIONS
-❌ DO NOT mark weather/nature as props (sunlight, rain, wind, river, trees, mountains)
-❌ DO NOT mark character appearance as props (long hair, suit, dress — unless explicitly handled as a prop)
-❌ DO NOT mark emotions/abstract concepts (crying, laughter, silence, anger)
-❌ DO NOT mark camera/script directions as characters (镜头, VO without a person, scene transitions)
-❌ DO NOT invent characters mentioned in dialogue but not physically present
+## 严格禁止
+❌ 不要把天气/自然环境识别为道具（阳光、雨水、风、雪、江水、河流、树木、山景）
+❌ 不要把角色外貌描述当道具（长发、西装、裙子——除非被角色明确拿取/交互）
+❌ 不要把情绪/抽象概念当道具（哭泣、笑声、沉默、愤怒、气氛、心情）
+❌ 不要把摄影术语当角色（镜头一、远景、近景、特写、VO不带人名）
+❌ 不要编造只在台词中提及但肉身未出场的角色
 
-## CHARACTER PRIORITY
-1. Has dialogue lines (XXX：) → MUST be included
-2. Has physical actions (walks in, sits down, hands over object) → strong candidate
-3. Only mentioned in dialogue → DO NOT include
+## 角色判断优先级
+1. 有对白行（XXX：或XXX:）→ 必须列入mainChars
+2. 有明确动作描写（推门进来、坐下、递给、接过等）→ 列入mainChars
+3. 仅在他人口中被提及 → 绝对不列入
 
-## PROP CRITERIA (strict)
-✅ Character actively using/holding/delivering an object
-✅ Object drives the scene (key prop: letter, photo, weapon, gift)
-❌ Background scenery
-❌ Clothing (unless plot-critical interaction)
+## 道具判断标准
+✅ 角色正在使用、持有、递出、接过的实物物品
+✅ 推动情节的关键物品（信、照片、武器、礼物、遗物）
+❌ 环境背景景物
+❌ 普通穿着衣物（除非特殊交互）
 
-## FEW-SHOT EXAMPLES
+## Few-shot 范例
 
-**Scene 1:**
-Text: "1 江边 日外\\n妈妈和女儿在江边散步，妈妈侧肩挂着白色的帆布包。女儿拿着手机在看。妈妈从包里掏出保温杯递给女儿。"
-Parser says: mainChars:["妈妈","女儿"] props:["白色的帆布包","手机","保温杯"]
-Your output:
+范例1（正常场次）：
+原文："1 江边 日外\\n妈妈和女儿在江边散步，妈妈侧肩挂着白色的帆布包。女儿拿着手机在看。妈妈从包里掏出保温杯递给女儿。"
+解析器参考：mainChars:"妈妈 女儿" props:"白色帆布包 手机 保温杯"
+你的输出：
 {"num":"1","summary":"江边散步时妈妈从帆布包掏出保温杯递给女儿","mainChars":"妈妈 女儿","minorChars":"","props":"白色帆布包 手机 保温杯","costumes":"","remark":""}
 
-**Scene 2:**
-Text: "3 银杏树下 日外\\n妈妈(O.S.)你好啊,你能不能帮我拍一张照片。女儿:妈你别麻烦人家了。路人男性接过手机帮她们拍照。"
-Parser says: mainChars:["妈妈","女儿","路人男性"] props:["手机"]
-Your output:
-{"num":"3","summary":"妈妈请路人男性用手机帮她和女儿合影，女儿不耐烦","mainChars":"妈妈 女儿","minorChars":"路人男性","props":"手机","costumes":"","remark":"路人男性为随机找的拍摄者"}
+范例2（含画外音+群演）：
+原文："3 银杏树下 日外\\n妈妈(O.S.)你好啊,帮我拍张照片。女儿:妈别麻烦人家。路人男性接过手机帮她们拍照。"
+解析器参考：mainChars:"妈妈 女儿 路人男性" props:"手机"
+你的输出——路人男性应归为minorChars（群演无对白）：
+{"num":"3","summary":"妈妈请路人男性用手机帮母女合影，女儿不耐烦","mainChars":"妈妈 女儿","minorChars":"路人男性","props":"手机","costumes":"","remark":"路人男性为随机找的拍摄者"}
 
-**Scene 3 (tricky):**
-Text: "5 家内餐桌 夜内\\n餐桌上摆着三菜一汤。妈妈夹了一块红烧肉放进女儿碗里。窗外下着雨，风吹动窗帘。"
-Parser says: mainChars:["妈妈","女儿"] props:["红烧肉","窗帘"]
-Your output — CORRECT the error (rain/wind/curtain are NOT props):
+范例3（需要纠错——天气和窗帘不是道具）：
+原文："5 家内餐桌 夜内\\n餐桌上摆着三菜一汤。妈妈夹了一块红烧肉放进女儿碗里。窗外下着雨，风吹动窗帘。"
+解析器参考：mainChars:"妈妈 女儿" props:"红烧肉 窗帘"
+你的输出——纠正错误，雨水和窗帘是环境，不应列为道具：
 {"num":"5","summary":"餐桌上妈妈夹红烧肉给女儿，窗外风雨交加","mainChars":"妈妈 女儿","minorChars":"","props":"红烧肉","costumes":"","remark":""}
 
-## INPUT FORMAT
-You will receive a JSON array of scenes. Each scene has: num, location, io, dn, the parser's best-guess mainChars, and the rawText.
+## 输入格式
+你会收到JSON数组，每个元素：{num, location, io, dn, parserMainChars, rawText}
 
-## OUTPUT FORMAT
-Return ONLY a JSON array. Each element:
-{"num":"scene_number","summary":"<50 chars","mainChars":"space separated","minorChars":"space separated","props":"space separated","costumes":"space separated","remark":""}
-Omit fields only if they are empty strings.`;
+## 输出格式
+只输出纯JSON数组。每个元素格式：
+{"num":"场号","summary":"<50字梗概","mainChars":"空格分隔","minorChars":"空格分隔","props":"空格分隔","costumes":"服装","remark":"备注"}
+字段为空时留空字符串""。`;
 
-// Round 2: Global consistency
-const SYSTEM_PROMPT_ROUND2 = `You are a veteran Script Supervisor performing a GLOBAL CONSISTENCY CHECK across all scenes.
+const SYSTEM_PROMPT_ROUND2 = `你是资深剧本统筹，正在进行全剧全局一致性检查。
 
-## YOUR TASK
-Review the complete scene breakdown below. Find and fix:
+## 背景
+第一轮已逐场分析完毕。现在请你从全剧视角，进行跨场次的数据清洗和对齐。
 
-1. **CHARACTER CONSOLIDATION**: If "张三"/"张总"/"老张" appear across scenes, they may be the SAME PERSON. Note in remark field.
-2. **CHARACTER CLASSIFICATION**: Characters appearing in 3+ scenes with dialogue → mainChars. Appearing in 1 scene, no dialogue → minorChars.
-3. **KEY PROPS**: Props appearing in 2+ scenes → mark as "🔑关键道具:xxx" in remark of their first scene.
-4. **DUPLICATE PROP NAMES**: Merge equivalent prop names (手机壳/手机套 → 手机壳).
+## 你的任务
 
-## INPUT
-JSON array of all scenes with their current mainChars, minorChars, props.
+1. 角色合并：如果不同场次出现"张三"/"张总"/"老张"，它们可能指向同一人。请在charAliases中标注等价关系。在每个涉及场次的remark中注明。
 
-## OUTPUT
-Return a JSON object with two fields:
+2. 角色主配重分类：
+   - 出场 ≥3场 且有对白 → mainChars
+   - 仅出场1场 且无对白 → minorChars
+   - 泛指称呼（路人、学生、群众、顾客等）→ 始终minorChars
+
+3. 关键道具识别：同一道具在 ≥2场出现 → 标记为"🔑"关键道具，在首场remark中列出。
+
+4. 道具名统一：合并等价道具名（"手机壳"/"手机套"/"手机保护壳"→统一为最简名称）。
+
+## 输入
+全部场次的JSON数组，每场含：{num, location, mainChars, minorChars, props, remark}
+
+## 输出
+严格JSON object：
 {
   "charAliases": {"张三":["张总","老张"]},
   "keyProps": ["手机","保温杯","白色帆布包"],
-  "sceneUpdates": [{"num":"1","mainChars":"updated","minorChars":"updated","props":"updated","remark":"updated"}]
+  "sceneUpdates": [{"num":"1","mainChars":"修正后","minorChars":"修正后","props":"修正后","remark":"补充备注"}]
 }
-Only include scenes that actually changed.`;
+只包含真的有变化的场次，没变化的场次不要放入sceneUpdates。`;
 
 // ============================================
 // 批量调用
@@ -307,35 +314,56 @@ function applyRound2Results(scenes, r2) {
   const updates = {};
   r2.sceneUpdates.forEach(u => { updates[String(u.num)] = u; });
 
+  // 对每个场景，AI结果取并集（不删除本地数据）
   scenes.forEach(s => {
     const u = updates[String(s.num)];
     if (!u) return;
-    if (u.mainChars) s.mainChars = u.mainChars;
-    if (u.minorChars) s.minorChars = u.minorChars;
-    if (u.props) s.props = u.props;
-    if (u.remark) s.remark = u.remark;
+    if (u.mainChars) s.mainChars = cleanAndMerge(s.mainChars, u.mainChars);
+    if (u.minorChars) s.minorChars = cleanAndMerge(s.minorChars, u.minorChars);
+    if (u.props) s.props = cleanAndMerge(s.props, u.props);
+    // remark采用追加而非覆盖
+    if (u.remark && u.remark !== s.remark) {
+      s.remark = s.remark ? s.remark + ' | ' + u.remark : u.remark;
+    }
   });
 
-  // 如果有角色别名映射，在所有场次中全局替换
+  // 角色别名全局替换（保留原角色名同时添加标准名）
   if (r2.charAliases) {
     Object.entries(r2.charAliases).forEach(([canonical, aliases]) => {
       scenes.forEach(s => {
-        const mc = (s.mainChars || '').split(/[\s、,]+/);
+        // 在mainChars中替换别名
+        let mc = (s.mainChars || '').split(/[\s、,]+/).filter(Boolean);
+        let changed = false;
         aliases.forEach(alias => {
           const idx = mc.indexOf(alias);
-          if (idx > -1) mc[idx] = canonical;
+          if (idx > -1) { mc[idx] = canonical; changed = true; }
         });
-        s.mainChars = [...new Set(mc)].join(' ');
+        if (changed) s.mainChars = [...new Set(mc)].join(' ');
+
+        // 同时检查minorChars
+        let mi = (s.minorChars || '').split(/[\s、,]+/).filter(Boolean);
+        changed = false;
+        aliases.forEach(alias => {
+          const idx = mi.indexOf(alias);
+          if (idx > -1) { mi[idx] = canonical; changed = true; }
+        });
+        if (changed) s.minorChars = [...new Set(mi)].join(' ');
       });
     });
   }
 
-  // 标记关键道具
+  // 标记关键道具（只在首场remark中添加备注）
   if (r2.keyProps) {
-    r2.keyProps.forEach(prop => {
-      scenes.forEach(s => {
-        if ((s.props || '').includes(prop) && !(s.remark || '').includes('🔑')) {
-          s.remark = (s.remark || '') + ' 🔑' + prop;
+    let firstMarked = {};
+    scenes.forEach(s => {
+      r2.keyProps.forEach(prop => {
+        if ((s.props || '').includes(prop)) {
+          if (!firstMarked[prop]) {
+            if (!(s.remark || '').includes('🔑' + prop)) {
+              s.remark = (s.remark || '') + ' 🔑' + prop;
+            }
+            firstMarked[prop] = true;
+          }
         }
       });
     });
@@ -345,7 +373,7 @@ function applyRound2Results(scenes, r2) {
 function cleanAndMerge(local, ai) {
   const localSet = new Set((local || '').split(/[\s、,]+/).filter(Boolean));
   const aiSet = new Set((ai || '').split(/[\s、,]+/).filter(Boolean));
-  // AI的补充，但不过滤掉本地已有的
+  // AI的补充——取并集，不删除本地已有数据
   aiSet.forEach(x => localSet.add(x));
   return [...localSet].join(' ');
 }
