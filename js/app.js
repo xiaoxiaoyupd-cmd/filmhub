@@ -525,6 +525,17 @@ function init() {
     }, 600);
   }
 
+  // Ctrl+V 粘贴文件（全局监听，仅在粘贴文件时拦截）
+  document.addEventListener('paste', (e) => {
+    const files = e.clipboardData?.files;
+    if (!files || files.length === 0) return; // 粘贴的是文字，不拦截
+    // 如果用户在 textarea/input 中粘贴文件，也拦截
+    e.preventDefault();
+    if (typeof readScriptFile === 'function') {
+      readScriptFile(files[0]);
+    }
+  });
+
   // 点击侧边栏外部关闭（移动端）
   document.getElementById('app').addEventListener('click', (e) => {
     const sidebar = document.getElementById('sidebar');
