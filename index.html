@@ -282,10 +282,11 @@
       <div class="card script-input-card">
         <div class="si-header"><h3>📝 剧本输入</h3></div>
         <!-- 文件拖拽上传 -->
-        <div class="file-drop-zone" id="file-drop-zone"
+        <div class="file-drop-zone" id="file-drop-zone" tabindex="0"
              ondragover="event.preventDefault();this.classList.add('drag-over')"
              ondragleave="this.classList.remove('drag-over')"
-             ondrop="handleFileDrop(event)">
+             ondrop="handleFileDrop(event)"
+             onpaste="handleZonePaste(event)">
           <span class="drop-icon">📂</span>
           <span>拖拽剧本文件到此处</span>
           <span class="drop-sep">或</span>

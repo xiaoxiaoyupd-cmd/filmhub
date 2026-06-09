@@ -525,32 +525,6 @@ function init() {
     }, 600);
   }
 
-  // Ctrl+V 粘贴：文件粘贴 → 导入；文本粘贴 → 填入textarea
-  document.addEventListener('paste', (e) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-
-    // 先检查有没有文件
-    for (const item of items) {
-      if (item.kind === 'file') {
-        const file = item.getAsFile();
-        if (file) {
-          e.preventDefault();
-          if (typeof readScriptFile === 'function') {
-            readScriptFile(file);
-          }
-          return;
-        }
-      }
-    }
-
-    // 没有文件 → 不拦截，让文字正常粘贴到textarea
-  });
-
-  // 点击侧边栏外部关闭（移动端）
-  document.getElementById('app').addEventListener('click', (e) => {
-  });
-
   // 点击侧边栏外部关闭（移动端）
   document.getElementById('app').addEventListener('click', (e) => {
     const sidebar = document.getElementById('sidebar');
