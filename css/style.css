@@ -497,6 +497,9 @@ body {
 .file-drop-zone span { font-size: 0.8rem; color: var(--text2); }
 .file-drop-zone b { color: var(--primary); }
 .file-drop-zone .drop-hint { font-size: 0.68rem; color: var(--text3); }
+.file-drop-zone .drop-sep { font-size: 0.7rem; color: var(--text3); }
+.file-drop-zone.loading { border-color: var(--accent); background: #FFFAF0; pointer-events: none; opacity: 0.7; }
+.file-drop-zone.loaded { border-color: var(--success); background: #F0FFF4; border-style: solid; }
 
 .script-textarea {
   width: 100%;

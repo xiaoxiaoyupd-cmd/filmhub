@@ -44,36 +44,160 @@ function loadSampleScript() {
   showToast('示例已加载 📋');
 }
 
-// ── 文件上传 ──
-function handleFileDrop(event) {
-  event.preventDefault();
-  document.getElementById('file-drop-zone').classList.remove('drag-over');
-  const file = event.dataTransfer.files[0];
-  if (file) readScriptFile(file);
-}
-
-function handleFileSelect(event) {
-  const file = event.target.files[0];
-  if (file) readScriptFile(file);
-  event.target.value = ''; // 允许重复选同一文件
-}
+// ── 文件上传（实现在下方 readScriptFile 区域）──
 
 function readScriptFile(file) {
-  if (!file.name.endsWith('.txt') && file.type && !file.type.startsWith('text/')) {
-    showToast('⚠️ 仅支持 .txt 文本文件'); return;
+  const name = file.name.toLowerCase();
+
+  // .txt
+  if (name.endsWith('.txt') || (file.type && file.type.startsWith('text/'))) {
+    readAsText(file);
+    return;
   }
+
+  // .docx
+  if (name.endsWith('.docx')) {
+    readDocx(file);
+    return;
+  }
+
+  // .pdf
+  if (name.endsWith('.pdf')) {
+    readPdf(file);
+    return;
+  }
+
+  // fallback — try as text
+  readAsText(file);
+}
+
+function readAsText(file) {
   const reader = new FileReader();
   reader.onload = function(e) {
-    document.getElementById('script-input').value = e.target.result;
-    _rawScript = e.target.result;
-    const lines = (e.target.result.match(/^\d{1,3}\s/gm) || []).length;
-    document.getElementById('script-status').textContent = '📂 ' + file.name + ' (' + (lines || '?') + ' 场)';
-    showToast('✅ 已加载: ' + file.name);
+    setScriptText(e.target.result, file.name);
   };
   reader.onerror = function() {
     showToast('❌ 文件读取失败');
   };
   reader.readAsText(file, 'UTF-8');
+}
+
+async function readDocx(file) {
+  showFileLoading(true);
+  try {
+    await ensureLib('docx');
+    const buf = await file.arrayBuffer();
+    const result = await mammoth.extractRawText({ arrayBuffer: buf });
+    const text = result.value || '';
+    if (!text.trim()) {
+      showToast('⚠️ 文件中未检测到文本内容');
+      showFileLoading(false);
+      return;
+    }
+    setScriptText(text, file.name);
+    if (result.messages && result.messages.length) {
+      console.log('Mammoth warnings:', result.messages);
+    }
+  } catch(e) {
+    console.error('DOCX parse error:', e);
+    showToast('❌ DOCX 解析失败: ' + (e.message || '未知错误'));
+    showFileLoading(false);
+  }
+}
+
+async function readPdf(file) {
+  showFileLoading(true);
+  try {
+    await ensureLib('pdf');
+    const buf = await file.arrayBuffer();
+    const loadingTask = pdfjsLib.getDocument({ data: buf });
+    const pdf = await loadingTask.promise;
+    let text = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const pageText = content.items.map(item => item.str).join(' ');
+      text += pageText + '\n';
+    }
+    if (!text.trim()) {
+      showToast('⚠️ 文件中未检测到文本内容');
+      showFileLoading(false);
+      return;
+    }
+    setScriptText(text, file.name);
+  } catch(e) {
+    console.error('PDF parse error:', e);
+    showToast('❌ PDF 解析失败: ' + (e.message || '未知错误'));
+    showFileLoading(false);
+  }
+}
+
+// ── 动态加载 CDN 库 ──
+const _libPromises = {};
+function ensureLib(type) {
+  if (_libPromises[type]) return _libPromises[type];
+  _libPromises[type] = (async () => {
+    if (type === 'docx') {
+      if (window.mammoth) return;
+      await loadScript('https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js');
+      return;
+    }
+    if (type === 'pdf') {
+      if (window.pdfjsLib) return;
+      await loadScript('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js');
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+      return;
+    }
+  })();
+  return _libPromises[type];
+}
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('Failed to load: ' + src));
+    document.head.appendChild(s);
+  });
+}
+
+// ── 公共：填充文本到 textarea ──
+function setScriptText(text, fileName) {
+  showFileLoading(false);
+  document.getElementById('script-input').value = text;
+  _rawScript = text;
+  const lines = (text.match(/^\d{1,3}\s/gm) || []).length;
+  document.getElementById('script-status').textContent = '📂 ' + fileName + ' (' + (lines || '?') + ' 场)';
+  showToast('✅ 已加载: ' + fileName);
+  // 更新上传区状态
+  const zone = document.getElementById('file-drop-zone');
+  if (zone) { zone.classList.add('loaded'); zone.classList.remove('loading'); }
+}
+
+// ── 上传区载入状态 ──
+function showFileLoading(on) {
+  const zone = document.getElementById('file-drop-zone');
+  if (!zone) return;
+  if (on) {
+    zone.classList.add('loading');
+    zone.classList.remove('loaded');
+  } else {
+    zone.classList.remove('loading');
+  }
+}
+
+function handleFileDrop(event) {
+  event.preventDefault();
+  document.getElementById('file-drop-zone').classList.remove('drag-over');
+  const file = event.dataTransfer.files[0];
+  if (file) { readScriptFile(file); }
+}
+
+function handleFileSelect(event) {
+  const file = event.target.files[0];
+  if (file) { readScriptFile(file); }
+  event.target.value = '';
 }
 
 // --- 标准化 ---
