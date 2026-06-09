@@ -44,6 +44,38 @@ function loadSampleScript() {
   showToast('示例已加载 📋');
 }
 
+// ── 文件上传 ──
+function handleFileDrop(event) {
+  event.preventDefault();
+  document.getElementById('file-drop-zone').classList.remove('drag-over');
+  const file = event.dataTransfer.files[0];
+  if (file) readScriptFile(file);
+}
+
+function handleFileSelect(event) {
+  const file = event.target.files[0];
+  if (file) readScriptFile(file);
+  event.target.value = ''; // 允许重复选同一文件
+}
+
+function readScriptFile(file) {
+  if (!file.name.endsWith('.txt') && file.type && !file.type.startsWith('text/')) {
+    showToast('⚠️ 仅支持 .txt 文本文件'); return;
+  }
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    document.getElementById('script-input').value = e.target.result;
+    _rawScript = e.target.result;
+    const lines = (e.target.result.match(/^\d{1,3}\s/gm) || []).length;
+    document.getElementById('script-status').textContent = '📂 ' + file.name + ' (' + (lines || '?') + ' 场)';
+    showToast('✅ 已加载: ' + file.name);
+  };
+  reader.onerror = function() {
+    showToast('❌ 文件读取失败');
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+
 // --- 标准化 ---
 function normalizeScript() {
   let text = _rawScript || document.getElementById('script-input').value.trim();

@@ -479,6 +479,25 @@ body {
 }
 .si-header h3 { font-size: 0.95rem; font-weight: 700; }
 .si-hint { font-size: 0.72rem; color: var(--text3); }
+/* 文件拖拽上传区 */
+.file-drop-zone {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  padding: 18px;
+  border: 2px dashed #C8CCD4;
+  border-radius: var(--radius);
+  background: #FAFBFC;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-bottom: 10px;
+  user-select: none;
+}
+.file-drop-zone:hover { border-color: var(--primary); background: #F0F4FF; }
+.file-drop-zone.drag-over { border-color: var(--primary); background: #E8F0FF; box-shadow: 0 0 0 3px rgba(51,112,255,0.1); }
+.file-drop-zone .drop-icon { font-size: 1.5rem; }
+.file-drop-zone span { font-size: 0.8rem; color: var(--text2); }
+.file-drop-zone b { color: var(--primary); }
+.file-drop-zone .drop-hint { font-size: 0.68rem; color: var(--text3); }
+
 .script-textarea {
   width: 100%;
   padding: 14px 16px;
