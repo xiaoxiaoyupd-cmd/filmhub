@@ -200,19 +200,6 @@ function handleFileSelect(event) {
   event.target.value = '';
 }
 
-// Ctrl+V 粘贴文件到拖拽区
-function handleZonePaste(event) {
-  const items = event.clipboardData?.items;
-  if (!items) return;
-  for (const item of items) {
-    if (item.kind === 'file') {
-      event.preventDefault();
-      readScriptFile(item.getAsFile());
-      return;
-    }
-  }
-}
-
 // --- 标准化 ---
 function normalizeScript() {
   let text = _rawScript || document.getElementById('script-input').value.trim();
