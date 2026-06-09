@@ -636,11 +636,19 @@ function buildScene(sc) {
       continue;
     }
 
-    // 2. OS/VO 画外音 "XXX（OS）" "XXX（VO）"
-    const osMatch = line.match(/^([^\s：:（）()\d]{1,8})[（(]\s*(OS|VO|画外|画外音)\s*[）)]/i);
+    // 2. OS/VO 画外音 — 容忍中间干扰词（如"妈妈杭州话（O.S.）"）
+    // 匹配模式：角色名 + 可能的修饰词 + （OS/VO/画外音）
+    const osMatch = line.match(/^([^\s：:（）()\d]{1,8})\s*(?:[一-鿿]{0,6})?[（(]\s*(OS|VO|画外|画外音)\s*[）)]/i);
     if (osMatch && isChName(osMatch[1])) {
       addChar(osMatch[1], true);
       recordHighlight(highlights.mainChars, osMatch[1], allText);
+      continue;
+    }
+    // 也匹配行中的 OS/VO（非行首，如对白中夹着标注）
+    const osMidMatch = line.match(/([^\s：:（）()\d]{1,8})[（(]\s*(OS|VO|画外音)\s*[）)]/i);
+    if (osMidMatch && isChName(osMidMatch[1])) {
+      addChar(osMidMatch[1], true);
+      recordHighlight(highlights.mainChars, osMidMatch[1], allText);
       continue;
     }
 
@@ -650,6 +658,27 @@ function buildScene(sc) {
 
   // 从全文做二次补充（某些角色只在叙述中出现）
   extractNarrativeChars(allText, charStats);
+
+  // 组合词拆解："母女俩"→妈妈+女儿，"父子俩"→爸爸+儿子 等
+  const PAIR_MAP = {
+    '母女俩': ['妈妈','女儿'], '母子俩': ['妈妈','儿子'],
+    '父女俩': ['爸爸','女儿'], '父子俩': ['爸爸','儿子'],
+    '姐妹俩': ['姐姐','妹妹'], '兄妹俩': ['哥哥','妹妹'], '姐弟俩': ['姐姐','弟弟'], '兄弟俩': ['哥哥','弟弟'],
+    '爷孙俩': ['爷爷','孙子'], '祖孙俩': ['奶奶','孙子'],
+    '夫妻俩': ['老公','老婆'], '两口子': ['老公','老婆'],
+    '母女': ['妈妈','女儿'], '母子': ['妈妈','儿子'], '父女': ['爸爸','女儿'], '父子': ['爸爸','儿子'],
+    '姐妹': ['姐姐','妹妹'], '兄妹': ['哥哥','妹妹'], '姐弟': ['姐姐','弟弟'], '兄弟': ['哥哥','弟弟'],
+    '爷孙': ['爷爷','孙子'], '夫妻': ['老公','老婆'],
+    '母女两个': ['妈妈','女儿'], '父子两个': ['爸爸','儿子'],
+  };
+  Object.entries(PAIR_MAP).forEach(([combo, members]) => {
+    if (allText.includes(combo)) {
+      members.forEach(name => {
+        if (!charStats[name]) charStats[name] = { dialogue: false, actions: 0 };
+        charStats[name].actions++;
+      });
+    }
+  });
 
   // 分类主要/次要
   const mainChars = [], minorChars = [];
@@ -706,36 +735,37 @@ function extractActionChars(line, charStats) {
   const re1 = new RegExp('([\\u4e00-\\u9fff]{2,4})' + actionVerbs, 'g');
   let m;
   while ((m = re1.exec(line)) !== null) {
-    if (isChName(m[1])) charStats[m[1]] = charStats[m[1]] || { dialogue: false, actions: 0 };
-    if (charStats[m[1]]) charStats[m[1]].actions++;
+    if (isChName(m[1]) && !hasLocationSuffix(m[1])) {
+      charStats[m[1]] = charStats[m[1]] || { dialogue: false, actions: 0 };
+      charStats[m[1]].actions++;
+    }
   }
 
   // 模式2: "XXX跟在YYY后面" / "XXX和YYY一起" / "XXX与YYY对视" — 多人互动
   const interactRe = /([一-鿿]{2,4})(?:和|与|跟|同|还有|以及)([一-鿿]{2,4})(?:一起|对视|握手|拥抱|并行|并肩|相伴|聊天|交谈|说话|吵架|打架|合作|配合|商量|讨论)/g;
   while ((m = interactRe.exec(line)) !== null) {
-    if (isChName(m[1])) { charStats[m[1]] = charStats[m[1]] || { dialogue: false, actions: 0 }; charStats[m[1]].actions++; }
-    if (isChName(m[2])) { charStats[m[2]] = charStats[m[2]] || { dialogue: false, actions: 0 }; charStats[m[2]].actions++; }
+    if (isChName(m[1]) && !hasLocationSuffix(m[1])) { charStats[m[1]] = charStats[m[1]] || { dialogue: false, actions: 0 }; charStats[m[1]].actions++; }
+    if (isChName(m[2]) && !hasLocationSuffix(m[2])) { charStats[m[2]] = charStats[m[2]] || { dialogue: false, actions: 0 }; charStats[m[2]].actions++; }
   }
 
   // 模式3: "XXX看着YYY" / "XXX帮YYY" — 交互动作
   const lookRe = /([一-鿿]{2,4})(?:看着|看向|望着|盯着|瞪了|帮|扶|拉住|拦住|追上|赶上|找到|叫住|喊住)([一-鿿]{2,4})/g;
   while ((m = lookRe.exec(line)) !== null) {
-    if (isChName(m[1])) { charStats[m[1]] = charStats[m[1]] || { dialogue: false, actions: 0 }; charStats[m[1]].actions++; }
-    if (isChName(m[2])) { charStats[m[2]] = charStats[m[2]] || { dialogue: false, actions: 0 }; charStats[m[2]].actions++; }
+    if (isChName(m[1]) && !hasLocationSuffix(m[1])) { charStats[m[1]] = charStats[m[1]] || { dialogue: false, actions: 0 }; charStats[m[1]].actions++; }
+    if (isChName(m[2]) && !hasLocationSuffix(m[2])) { charStats[m[2]] = charStats[m[2]] || { dialogue: false, actions: 0 }; charStats[m[2]].actions++; }
   }
 
   // 模式4: "XXX和YYY在冲咖啡/XXX、YYY一起..." — 并列人名+任意动作
-  // 先尝试2人并列
   const pairRe = /([一-鿿]{2,4})(?:和|与|跟)([一-鿿]{2,4})(?:在|正在|一起|一同|一块|并肩|一道|共同|都|也|就|便|刚|已经)/g;
   while ((m = pairRe.exec(line)) !== null) {
-    if (isChName(m[1])) { charStats[m[1]] = charStats[m[1]] || { dialogue: false, actions: 0 }; charStats[m[1]].actions++; }
-    if (isChName(m[2])) { charStats[m[2]] = charStats[m[2]] || { dialogue: false, actions: 0 }; charStats[m[2]].actions++; }
+    if (isChName(m[1]) && !hasLocationSuffix(m[1])) { charStats[m[1]] = charStats[m[1]] || { dialogue: false, actions: 0 }; charStats[m[1]].actions++; }
+    if (isChName(m[2]) && !hasLocationSuffix(m[2])) { charStats[m[2]] = charStats[m[2]] || { dialogue: false, actions: 0 }; charStats[m[2]].actions++; }
   }
-  // 再尝试3人及以上并列: "XXX、YYY、ZZZ一起..."
+  // 再尝试3人及以上并列
   const multiRe = /([一-鿿]{2,4})[、，]([一-鿿]{2,4})(?:[、，]([一-鿿]{2,4}))?(?:[、，]([一-鿿]{2,4}))?(?:一起|在|都|也|就|便|刚|已经|正在)/g;
   while ((m = multiRe.exec(line)) !== null) {
     for (let i = 1; i <= 4; i++) {
-      if (m[i] && isChName(m[i])) { charStats[m[i]] = charStats[m[i]] || { dialogue: false, actions: 0 }; charStats[m[i]].actions++; }
+      if (m[i] && isChName(m[i]) && !hasLocationSuffix(m[i])) { charStats[m[i]] = charStats[m[i]] || { dialogue: false, actions: 0 }; charStats[m[i]].actions++; }
     }
   }
 }
@@ -760,7 +790,7 @@ function extractNarrativeChars(text, charStats) {
   patterns.forEach(re => {
     let m;
     while ((m = re.exec(text)) !== null) {
-      if (isChName(m[1]) && !charStats[m[1]]) {
+      if (isChName(m[1]) && !hasLocationSuffix(m[1]) && !charStats[m[1]]) {
         charStats[m[1]] = { dialogue: false, actions: 1 };
       }
     }
