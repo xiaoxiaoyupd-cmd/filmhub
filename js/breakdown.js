@@ -42,6 +42,26 @@ function loadSampleScript() {
   document.getElementById('script-input').value = SAMPLE_SCRIPT;
   _rawScript = SAMPLE_SCRIPT;
   showToast('示例已加载 📋');
+  document.getElementById('script-input').scrollIntoView({ behavior: 'smooth' });
+}
+
+// 一键粘贴 — 主动读取剪贴板
+async function pasteFromClipboard() {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (!text || !text.trim()) { showToast('⚠️ 剪贴板内容为空'); return; }
+    document.getElementById('script-input').value = text;
+    _rawScript = text;
+    const lines = (text.match(/^\d{1,3}\s/gm) || []).length;
+    document.getElementById('script-status').textContent = '📋 已粘贴 (' + (lines || '?') + ' 场)';
+    showToast('✅ 已粘贴' + (lines ? ' ' + lines + ' 场' : ''));
+  } catch(e) {
+    if (e.name === 'NotAllowedError') {
+      showToast('💡 浏览器弹出权限提示时请点"允许"，然后再次点击粘贴按钮');
+    } else {
+      showToast('💡 请用 Ctrl+V 直接粘贴到文本框，或点击上方 📁 选择文件');
+    }
+  }
 }
 
 // ── 文件上传（实现在下方 readScriptFile 区域）──

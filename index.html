@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>Prodlink — Producer + Link 影视制片工作台</title>
-  <link rel="stylesheet" href="css/style.css?v=4">
+  <link rel="stylesheet" href="css/style.css?v=5">
 </head>
 <body>
 
@@ -47,7 +47,7 @@
       </div>
     </nav>
     <div class="sb-footer">
-      <div class="sb-version">v2.0</div>
+      <div class="sb-version">v2.1</div>
       <div class="sb-user" onclick="showToast('个人中心即将上线')">
         <span class="sb-avatar">👤</span>
         <span class="sb-username">制片人</span>
@@ -298,6 +298,9 @@
         </div>
         <input type="file" id="file-input" accept=".txt,.docx,.pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf" style="display:none;" onchange="handleFileSelect(event)">
         <textarea id="script-input" class="script-textarea" placeholder="粘贴剧本，每场格式：&#10;1 场景名 日内&#10;描述...&#10;角色名：对白...&#10;&#10;2 另一个场景 夜外&#10;...&#10;&#10;支持: 1 xxx / 1. xxx / 1、xxx" rows="8"></textarea>
+        <div style="display:flex;justify-content:flex-end;margin-top:4px;">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="pasteFromClipboard()">📋 一键粘贴</button>
+        </div>
         <div class="si-actions">
           <button class="btn btn-primary btn-lg" onclick="analyzeScript()">🤖 AI分析剧本</button>
           <button class="btn btn-outline btn-lg" onclick="normalizeScript()">🔄 标准化格式</button>
@@ -512,10 +515,10 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
-<script src="js/datahub.js?v=4"></script>
-<script src="js/collab.js?v=4"></script>
-<script src="js/app.js?v=4"></script>
-<script src="js/breakdown.js?v=4"></script>
-<script src="js/crew.js?v=4"></script>
+<script src="js/datahub.js?v=5"></script>
+<script src="js/collab.js?v=5"></script>
+<script src="js/app.js?v=5"></script>
+<script src="js/breakdown.js?v=5"></script>
+<script src="js/crew.js?v=5"></script>
 </body>
 </html>
