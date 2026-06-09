@@ -429,6 +429,16 @@ function isChName(word) {
 
   // 新增：纯方位后缀词过滤（X边/X旁/X附近 — 但"床边"可通过后续上下文判断）
   if (/^(?:远|近|这|那|哪|对|隔|上|下|左|右|前|后|里|外|一|两)(?:处|边|面|头|方|侧|旁|端|岸|角|沿)$/.test(word)) return false;
+
+  // 新增：地点/建筑/景观后缀 → 不是人名
+  // 案例："江边"+"行走"→被误判为角色名，实际"江边"是地点
+  if (/[边旁岸畔处坝湾潭泊渠沟滩屿洲岛坪场站港渡口]$/.test(word) && word.length <= 4) return false;
+  if (/[楼馆厅室园苑院府寓舍宅堂庙寺观塔碑]$/.test(word) && word.length <= 4) return false;
+  if (/[景野林岭谷峡坡崖壁峰顶]$/.test(word) && word.length <= 3) return false;
+
+  // 特殊排除："XXX边"模式（如"钱塘江边""江边""路边""海边"）
+  if (/[江河湖海路街道桥园场山岭谷峡坡]$/.test(word) && word.length === 2) return false;
+
   // 姓在常见姓氏表中，提高置信度
   if (CN_SURNAMES.includes(word[0])) return true;
   // 称呼类角色名
