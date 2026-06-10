@@ -2173,37 +2173,54 @@ function openAssistant() {
 function closeAssistant() { document.getElementById('assistant-overlay').style.display = 'none'; }
 
 function initAssistant() {
+  const saved = loadAssistantHistory();
+  if (saved && saved.length > 0) {
+    assistantMsgs = saved;
+    addAsMsg('assistant', '📂 已恢复上次对话。继续修改或输入"重新分析"开始新分析。');
+    return;
+  }
+
   assistantMsgs = [];
   const sc = AppBreakdown.scenes;
   if (!sc.length) return;
 
-  // 汇总信息
-  const allChars = new Set(); const allProps = new Set(); const allLocs = new Set();
+  const allMain = new Set(); const allMinor = new Set();
+  const allProps = new Set(); const allLocs = new Set();
+  const totalPages = sc.reduce((s, x) => s + x.pages, 0);
+  const propCount = {};
+
   sc.forEach(s => {
-    (s.mainChars||'').split(/[\s、,]+/).filter(Boolean).forEach(c => allChars.add(c));
-    (s.props||'').split(/[\s、,]+/).filter(Boolean).forEach(p => allProps.add(p));
+    (s.mainChars||'').split(/[\s、,]+/).filter(Boolean).forEach(c => allMain.add(c));
+    (s.minorChars||'').split(/[\s、,]+/).filter(Boolean).forEach(c => allMinor.add(c));
+    (s.props||'').split(/[\s、,]+/).filter(Boolean).forEach(p => { allProps.add(p); propCount[p] = (propCount[p]||0) + 1; });
     allLocs.add(s.location);
   });
 
+  const keyProps = Object.entries(propCount).filter(([,c]) => c >= 2).map(([p]) => p);
+  const assigned = sc.filter(s => s.assignedDay).length;
+  const unassigned = sc.length - assigned;
+
   addAsMsg('assistant', `你好！我是 <b>LINK小助手</b> 🤖
 
-我已经分析了你的剧本，共识别 <b>${sc.length}</b> 场戏：
-${sc.map(s => `· 场${s.num} — ${s.location} | ${s.io}${s.dn} | ${s.pages}页 | 角色:${s.mainChars||'无'}`).join('<br>')}
+📊 <b>剧本全景：</b>
+· ${sc.length}场戏 | ${totalPages.toFixed(1)}页 | ${allLocs.size}个场景
 
-📋 <b>汇总：</b>
-· 主要角色：${Array.from(allChars).join('、') || '未检测到'}
-· 道具清单：${Array.from(allProps).join('、') || '未检测到'}
-· 场景地点：${Array.from(allLocs).join('、')}
+👥 <b>角色：</b>
+· 主要(${allMain.size})：${Array.from(allMain).join('、') || '无'}
+· 次要(${allMinor.size})：${Array.from(allMinor).join('、') || '无'}
 
-你可以用自然语言让我修改，例如：
-· "第3场改成夜外"
-· "第1场加角色赵六"
-· "所有张三改成张总"
-· "确认无误" 生成顺场表`);
+🎒 <b>道具：</b>共${allProps.size}件
+${keyProps.length ? '· 🔑关键道具(≥2场)：' + keyProps.join('、') + '\n' : ''}
+📅 <b>拍摄日：</b>已分配${assigned}场 | 未分配${unassigned}场
+
+💡 <b>试试：</b>"第3场改成夜外" "主角是妈妈和女儿" "第1场有哪些角色？" "撤销" "确认无误"`);
+  persistAssistantHistory();
 }
 
 function addAsMsg(role, text) {
   assistantMsgs.push({ role, text, time: Date.now() });
+  if (assistantMsgs.length > 100) assistantMsgs = assistantMsgs.slice(-80);
+  persistAssistantHistory();
 }
 
 function renderAssistantMsgs() {
@@ -2214,130 +2231,272 @@ function renderAssistantMsgs() {
   container.scrollTop = container.scrollHeight;
 }
 
-function sendAssistantMsg() {
+// 对话持久化
+function persistAssistantHistory() {
+  try { localStorage.setItem('fh_as_history', JSON.stringify(assistantMsgs)); } catch(e) {}
+}
+function loadAssistantHistory() {
+  try { return JSON.parse(localStorage.getItem('fh_as_history')); } catch(e) { return null; }
+}
+
+// 撤销快照
+let _undoSnapshot = null;
+function takeSnapshot() {
+  _undoSnapshot = JSON.parse(JSON.stringify(AppBreakdown.scenes.map(s => ({
+    num: s.num, location: s.location, io: s.io, dn: s.dn,
+    pages: s.pages, summary: s.summary,
+    mainChars: s.mainChars, minorChars: s.minorChars,
+    props: s.props, costumes: s.costumes, remark: s.remark,
+    assignedDay: s.assignedDay
+  }))));
+}
+function restoreSnapshot() {
+  if (!_undoSnapshot) return false;
+  const map = {};
+  _undoSnapshot.forEach(s => { map[s.num] = s; });
+  AppBreakdown.scenes.forEach(s => {
+    const old = map[s.num]; if (!old) return;
+    ['location','io','dn','pages','summary','mainChars','minorChars','props','costumes','remark','assignedDay'].forEach(k => { s[k] = old[k]; });
+  });
+  _undoSnapshot = null; saveBreakdownData(); return true;
+}
+
+async function sendAssistantMsg() {
   const input = document.getElementById('as-input');
   const cmd = input.value.trim();
   if (!cmd) return;
   addAsMsg('user', cmd);
-  input.value = '';
-  processAssistantCmd(cmd);
+  input.value = ''; input.disabled = true;
   renderAssistantMsgs();
+  await processAssistantCmd(cmd);
+  renderAssistantMsgs();
+  input.disabled = false;
+  setTimeout(() => document.getElementById('as-input').focus(), 100);
 }
 
-function quickCmd(cmd) {
+async function quickCmd(cmd) {
   addAsMsg('user', cmd);
-  processAssistantCmd(cmd);
+  renderAssistantMsgs();
+  await processAssistantCmd(cmd);
   renderAssistantMsgs();
 }
 
-function processAssistantCmd(cmd) {
+// 核心：AI优先 + 本地兜底
+async function processAssistantCmd(cmd) {
   const sc = AppBreakdown.scenes;
 
   // 确认
-  if (/^(确认|没问题|好了|OK|ok|可以|行)$/.test(cmd) || cmd.includes('确认无误') || cmd.includes('没问题')) {
+  if (/^(确认|没问题|好了|OK|ok|可以|行)$/.test(cmd) || cmd.includes('确认无误')) {
     AppBreakdown.confirmed = true;
     document.getElementById('confirm-panel').style.display = 'none';
     document.getElementById('bd-layout').style.display = 'block';
     document.getElementById('ai-suggest').style.display = 'flex';
-    document.getElementById('assistant-bar').style.display = 'none';
     updateSuggestCard(); renderSceneTable(); renderSameLocationTable(); renderDayPanels(); saveBreakdownData();
     closeAssistant();
-    addAsMsg('assistant', '✅ 已确认！顺场表和同场次分析表已生成。<br>你可以在下方分配拍摄日，或随时再打开小助手修改。');
-    return;
+    addAsMsg('assistant', '✅ 已确认！顺场表和同场次分析表已生成。');
+    persistAssistantHistory(); renderAssistantMsgs(); return;
   }
 
   // 重新分析
   if (cmd.includes('重新分析')) {
-    assistantMsgs = [];
-    closeAssistant();
-    analyzeScript();
+    assistantMsgs = []; localStorage.removeItem('fh_as_history');
+    closeAssistant(); analyzeScript(); return;
+  }
+
+  // 撤销
+  if (/^(撤销|撤回|回退|undo)$/i.test(cmd)) {
+    if (restoreSnapshot()) { refreshConfirmInputs(); addAsMsg('assistant', '↩️ 已撤销上一步修改'); }
+    else { addAsMsg('assistant', '⚠️ 没有可撤销的修改'); }
     return;
   }
 
-  // 列出角色
-  if (cmd.includes('角色')) {
-    const all = new Set();
-    sc.forEach(s => (s.mainChars||'').split(/[\s、,]+/).filter(Boolean).forEach(c => all.add(c)));
-    addAsMsg('assistant', '👥 <b>全部角色：</b>' + (Array.from(all).join('、') || '未检测到'));
+  // 保存快照
+  takeSnapshot();
+
+  // 按场查询："第X场" 不带修改关键词
+  const queryScene = cmd.match(/第\s*(\d+)\s*场/);
+  if (queryScene && !/改|加|删|添加|变成|改为|换成|去掉|移除/.test(cmd)) {
+    const num = queryScene[1]; const scene = sc.find(s => s.num === num);
+    if (scene) {
+      addAsMsg('assistant', `📋 <b>场${num}</b> — ${scene.location} | ${scene.io}${scene.dn} | ${scene.pages}页\n<b>内容：</b>${scene.summary}\n<b>主要角色：</b>${scene.mainChars||'无'}\n<b>次要角色：</b>${scene.minorChars||'无'}\n<b>道具：</b>${scene.props||'无'}\n<b>服装：</b>${scene.costumes||'无'}\n<b>备注：</b>${scene.remark||'无'}\n${scene.assignedDay ? '📅 已分配拍摄日' : '📅 未分配拍摄日'}`);
+    } else {
+      addAsMsg('assistant', '❌ 没找到场' + num);
+    }
     return;
   }
 
-  // 列出道具
-  if (cmd.includes('道具')) {
-    const all = new Set();
-    sc.forEach(s => (s.props||'').split(/[\s、,]+/).filter(Boolean).forEach(p => all.add(p)));
-    addAsMsg('assistant', '🎒 <b>全部道具：</b>' + (Array.from(all).join('、') || '未检测到'));
-    return;
+  // 全局查询
+  if (/列出|显示|查看|有哪些/.test(cmd)) {
+    if (/角色/.test(cmd)) {
+      const allM = new Set(); const allN = new Set();
+      sc.forEach(s => {
+        (s.mainChars||'').split(/[\s、,]+/).filter(Boolean).forEach(c => allM.add(c));
+        (s.minorChars||'').split(/[\s、,]+/).filter(Boolean).forEach(c => allN.add(c));
+      });
+      addAsMsg('assistant', `👥 <b>角色：</b>\n主要(${allM.size})：${Array.from(allM).join('、')||'无'}\n次要(${allN.size})：${Array.from(allN).join('、')||'无'}`);
+      return;
+    }
+    if (/道具/.test(cmd)) {
+      const all = new Set(); sc.forEach(s => (s.props||'').split(/[\s、,]+/).filter(Boolean).forEach(p => all.add(p)));
+      addAsMsg('assistant', `🎒 <b>道具(${all.size}件)：</b>${Array.from(all).join('、')||'无'}`);
+      return;
+    }
+    if (/场景|地点/.test(cmd)) {
+      const all = new Set(); sc.forEach(s => all.add(s.location));
+      addAsMsg('assistant', `📍 <b>场景(${all.size}个)：</b>${Array.from(all).join('、')}`);
+      return;
+    }
+    if (/服装/.test(cmd)) {
+      const all = new Set(); sc.forEach(s => (s.costumes||'').split(/[\s、,]+/).filter(Boolean).forEach(c => all.add(c)));
+      addAsMsg('assistant', `👗 <b>服装：</b>${Array.from(all).join('、')||'无'}`);
+      return;
+    }
+  }
+
+  // AI优先
+  const canUseAI = dsApiKey && dsApiKey.startsWith('sk-');
+  if (canUseAI) {
+    addAsMsg('assistant', '🤖 AI思考中...');
+    renderAssistantMsgs();
+    assistantMsgs.pop(); // 去掉临时消息
+    const result = await callDeepSeek(cmd, sc);
+    if (result && result.action === 'confirm') { saveBreakdownData(); confirmAllScenes(); return; }
+    if (result && result.action === 'update' && result.scenes) {
+      result.scenes.forEach(upd => {
+        if (upd.num === '*') { sc.forEach(s => { s[upd.field] = upd.value; }); }
+        else { const s = sc.find(x => x.num === String(upd.num)||x.num===upd.num); if(s){ if(upd.field==='pages') s[upd.field]=parseFloat(upd.value)||s.pages; else s[upd.field]=upd.value; } }
+      });
+      refreshConfirmInputs(); saveBreakdownData();
+      addAsMsg('assistant', '✅ ' + (result.reply||'已更新')); return;
+    }
+    if (result && (result.action==='reply'||result.action==='unknown')) {
+      addAsMsg('assistant', (result.action==='unknown'?'🤖 ':'') + result.reply); return;
+    }
+  }
+
+  // 本地兜底
+  assistLocalCmd(cmd);
+}
+
+// 本地规则（弹窗版，输出到 addAsMsg）
+function assistLocalCmd(cmd) {
+  const sc = AppBreakdown.scenes;
+  const sceneNumMatch = cmd.match(/第\s*(\d+)\s*场/);
+  const targetScene = sceneNumMatch ? sc.find(s => s.num === sceneNumMatch[1]) : null;
+  const namedEntities = extractNames(cmd);
+
+  // "主角/主要角色 是/应该是 XXX"
+  if (/主角|主要角色|主演/.test(cmd) && /是|只有|有|应该|包括/.test(cmd)) {
+    let names = [];
+    const afterIs = cmd.match(/(?:是|只有|有|应该|包括)[：:\s]*(.+)/);
+    if (afterIs) names = afterIs[1].split(/[、，,和\s与跟及]+/).filter(Boolean).filter(n => n.length <= 4);
+    if (!names.length) names = namedEntities;
+    if (!names.length) { addAsMsg('assistant', '🤔 请说明具体角色名，如"主角是妈妈和女儿"'); return; }
+    if (targetScene) {
+      targetScene.mainChars = [...new Set([...(targetScene.mainChars||'').split(/[\s、,]+/).filter(Boolean), ...names])].join(' ');
+      addAsMsg('assistant', '✅ 场' + targetScene.num + ' 主角：' + names.join('、'));
+    } else {
+      sc.forEach(s => { names.forEach(n => { if (!(s.mainChars||'').includes(n)) s.mainChars = (s.mainChars||'') + ' ' + n; s.mainChars = s.mainChars.trim(); }); });
+      addAsMsg('assistant', '✅ 全部场次主角加上：' + names.join('、'));
+    }
+    refreshConfirmInputs(); saveBreakdownData(); return;
+  }
+
+  // "配角/次要角色 是..."
+  if (/配角|次要角色/.test(cmd) && /是|只有|有|应该|包括/.test(cmd)) {
+    const afterIs = cmd.match(/(?:是|只有|有|应该|包括)[：:\s]*(.+)/);
+    let names = afterIs ? afterIs[1].split(/[、，,和\s与跟及]+/).filter(Boolean).filter(n => n.length <= 4) : namedEntities;
+    if (!names.length) { addAsMsg('assistant', '🤔 请说明具体角色名'); return; }
+    if (targetScene) {
+      targetScene.minorChars = [...new Set([...(targetScene.minorChars||'').split(/[\s、,]+/).filter(Boolean), ...names])].join(' ');
+      addAsMsg('assistant', '✅ 场' + targetScene.num + ' 配角：' + names.join('、'));
+    } else {
+      sc.forEach(s => { names.forEach(n => { if (!(s.minorChars||'').includes(n)) s.minorChars = (s.minorChars||'') + ' ' + n; s.minorChars = s.minorChars.trim(); }); });
+      addAsMsg('assistant', '✅ 全部场次配角加上：' + names.join('、'));
+    }
+    refreshConfirmInputs(); saveBreakdownData(); return;
   }
 
   // "第X场 改成/改为 XXX"
   const changeMatch = cmd.match(/第\s*(\d+)\s*场?\s*[改换变]\s*(?:成|为)?\s*(.+)/);
   if (changeMatch) {
-    const num = changeMatch[1];
-    const rest = changeMatch[2];
+    const num = changeMatch[1]; const rest = changeMatch[2];
     const scene = sc.find(s => s.num === num);
     if (!scene) { addAsMsg('assistant', '❌ 没找到场' + num); return; }
-
-    // 尝试匹配各种属性
-    if (rest.includes('夜')) { scene.dn = '夜'; addAsMsg('assistant', '✅ 场' + num + ' 已改为夜戏'); }
-    if (rest.includes('日')) { scene.dn = '日'; }
-    if (rest.includes('外')) { scene.io = '外'; addAsMsg('assistant', '✅ 场' + num + ' 已改为外景'); }
-    if (rest.includes('内')) { scene.io = '内'; }
-
-    const locMatch = rest.match(/(?:场景|地点|位置)?[改换变为]?\s*"?([一-鿿a-zA-Z0-9\s]{2,10})"?\s*(?:$|[内外国日夜])/);
-    if (locMatch) { scene.location = locMatch[1].trim(); addAsMsg('assistant', '✅ 场' + num + ' 场景已更新'); }
-
-    const charMatch = rest.match(/角色[加增添]\s*([^\s，。]+)/);
-    if (charMatch) {
-      scene.mainChars = scene.mainChars ? scene.mainChars + ' ' + charMatch[1] : charMatch[1];
-      addAsMsg('assistant', '✅ 场' + num + ' 已添加角色：' + charMatch[1]);
-    }
-
-    const propMatch = rest.match(/道具[加增添]\s*([^\s，。]+)/);
-    if (propMatch) {
-      scene.props = scene.props ? scene.props + ' ' + propMatch[1] : propMatch[1];
-      addAsMsg('assistant', '✅ 场' + num + ' 已添加道具：' + propMatch[1]);
-    }
-
-    saveBreakdownData();
-    return;
+    let replies = [];
+    if (rest.includes('夜') && !rest.includes('日夜')) { scene.dn = '夜'; replies.push('夜戏'); }
+    else if (rest.includes('日') && !rest.includes('日夜')) { scene.dn = '日'; replies.push('日戏'); }
+    if (rest.includes('外') && !rest.includes('内外')) { scene.io = '外'; replies.push('外景'); }
+    else if (rest.includes('内') && !rest.includes('内外')) { scene.io = '内'; replies.push('内景'); }
+    const locM = rest.match(/(?:场景|地点|位置)?[改换变为]?\s*"?([一-鿿a-zA-Z0-9\s]{2,10})"?\s*(?:$|[内外国日夜])/);
+    if (locM) { scene.location = locM[1].trim(); replies.push('场景→' + locM[1]); }
+    const chM = rest.match(/角色[加增添]\s*([^\s，。]+)/);
+    if (chM) { scene.mainChars = (scene.mainChars||'') + ' ' + chM[1]; replies.push('+角色'+chM[1]); }
+    const pM = rest.match(/道具[加增添]\s*([^\s，。]+)/);
+    if (pM) { scene.props = (scene.props||'') + ' ' + pM[1]; replies.push('+道具'+pM[1]); }
+    addAsMsg('assistant', '✅ 场' + num + ' ' + (replies.join(' | ') || '已更新'));
+    saveBreakdownData(); return;
   }
 
   // "所有 XXX 改成 YYY"
-  const allChangeMatch = cmd.match(/所有\s*"?([^\s"]+)"?\s*[改换变]\s*(?:成|为)?\s*"?([^\s"]+)"?/);
-  if (allChangeMatch) {
-    const from = allChangeMatch[1], to = allChangeMatch[2];
+  const allR = cmd.match(/所有\s*"?([^\s"]+)"?\s*[改换变]\s*(?:成|为)?\s*"?([^\s"]+)"?/);
+  if (allR) {
     let cnt = 0;
     sc.forEach(s => {
-      if (s.mainChars && s.mainChars.includes(from)) { s.mainChars = s.mainChars.replace(new RegExp(from, 'g'), to); cnt++; }
-      if (s.location && s.location.includes(from)) { s.location = s.location.replace(new RegExp(from, 'g'), to); cnt++; }
-      if (s.summary && s.summary.includes(from)) { s.summary = s.summary.replace(new RegExp(from, 'g'), to); cnt++; }
+      ['mainChars','minorChars','location','summary','props','costumes','remark'].forEach(f => {
+        if (s[f] && s[f].includes(allR[1])) { s[f] = s[f].replace(new RegExp(allR[1], 'g'), allR[2]); cnt++; }
+      });
     });
-    saveBreakdownData();
-    addAsMsg('assistant', '✅ 已将 ' + cnt + ' 处 "' + from + '" 改为 "' + to + '"');
-    return;
+    saveBreakdownData(); addAsMsg('assistant', '✅ 替换' + cnt + '处：' + allR[1] + ' → ' + allR[2]); return;
   }
 
-  // "加角色 XXX"
-  const addCharMatch = cmd.match(/[加增添]\s*角色\s*([^\s，。]+)/);
-  if (addCharMatch) {
-    sc.forEach(s => { s.mainChars = s.mainChars ? s.mainChars + ' ' + addCharMatch[1] : addCharMatch[1]; });
-    saveBreakdownData();
-    addAsMsg('assistant', '✅ 已为所有场次添加角色：' + addCharMatch[1]);
-    return;
+  // "不对/不是/应该是" 纠错
+  if (/不对|不是|错了|应该是|改成|改为/.test(cmd)) {
+    const corr = cmd.match(/(?:不是|应该是|改成|改为)[：:\s]*(.+)/);
+    if (corr) {
+      const rm = corr[1].match(/(.+?)(?:应该)?(?:是|为|改成)(.+)/);
+      if (rm) {
+        let cnt = 0;
+        sc.forEach(s => {
+          ['mainChars','minorChars','location','summary','props','costumes','remark'].forEach(f => {
+            if (s[f] && s[f].includes(rm[1])) { s[f] = s[f].replace(new RegExp(rm[1], 'g'), rm[2]); cnt++; }
+          });
+        });
+        refreshConfirmInputs(); saveBreakdownData();
+        addAsMsg('assistant', cnt ? '✅ 已将"' + rm[1] + '" 改为 "' + rm[2] + '"（' + cnt + '处）' : '🤔 没找到"' + rm[1] + '"'); return;
+      }
+    }
   }
 
-  // "加道具 XXX"
-  const addPropMatch = cmd.match(/[加增添]\s*道具\s*([^\s，。]+)/);
-  if (addPropMatch) {
-    sc.forEach(s => { s.props = s.props ? s.props + ' ' + addPropMatch[1] : addPropMatch[1]; });
-    saveBreakdownData();
-    addAsMsg('assistant', '✅ 已为所有场次添加道具：' + addPropMatch[1]);
-    return;
+  // 全局 "加角色 XXX"
+  const acM = cmd.match(/[加增添]\s*角色\s*([^\s，。]+)/);
+  if (acM) { sc.forEach(s => { s.mainChars = (s.mainChars||'') + ' ' + acM[1]; }); saveBreakdownData(); addAsMsg('assistant', '✅ 已为所有场次添加角色：' + acM[1]); return; }
+
+  // 全局 "加道具 XXX"
+  const apM = cmd.match(/[加增添]\s*道具\s*([^\s，。]+)/);
+  if (apM) { sc.forEach(s => { s.props = (s.props||'') + ' ' + apM[1]; }); saveBreakdownData(); addAsMsg('assistant', '✅ 已为所有场次添加道具：' + apM[1]); return; }
+
+  // "删除/去掉 XXX"
+  const delM = cmd.match(/(?:删除|去掉|移除)\s*(?:角色|道具|服装)?\s*([^\s，。]+)/);
+  if (delM) {
+    let cnt = 0;
+    sc.forEach(s => {
+      ['mainChars','minorChars','props','costumes'].forEach(f => {
+        if ((s[f]||'').includes(delM[1])) { s[f] = s[f].replace(new RegExp('\\s*'+delM[1]+'\\s*','g'),' ').trim(); cnt++; }
+      });
+    });
+    refreshConfirmInputs(); saveBreakdownData(); addAsMsg('assistant', '✅ 已删除' + cnt + '处：' + delM[1]); return;
   }
 
-  // 看不懂
-  addAsMsg('assistant', '抱歉，我没理解你的意思 😅<br>试试这样说：<br>· "第3场改成夜外"<br>· "第1场加角色赵六"<br>· "所有张三改成张总"<br>· "加道具手机"<br>· "确认无误"');
+  // 兜底
+  addAsMsg('assistant', `🤔 试试这样说：
+· <b>"第3场改成夜外"</b> — 修改日夜内外
+· <b>"第1场加角色赵六"</b> — 指定场加角色
+· <b>"主角是妈妈和女儿"</b> — 设全局主角
+· <b>"所有张三改成张总"</b> — 全局替换
+· <b>"删掉李四"</b> / <b>"加道具手机"</b>
+· <b>"第3场有哪些角色？"</b> — 查询
+· <b>"确认无误"</b> / <b>"撤销"</b>`);
 }
 
 // ============================================
