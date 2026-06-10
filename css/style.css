@@ -970,11 +970,24 @@ body {
 .room-header span { font-size: 0.7rem; color: var(--text2); margin-left: auto; }
 .room-occupants { display: flex; flex-wrap: wrap; gap: 4px; }
 .hotel-guest {
-  display: inline-block; padding: 3px 8px;
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 4px 8px;
   background: #E8F5E9; border: 1px solid #C8E6C9;
   border-radius: 12px; font-size: 0.73rem; font-weight: 600;
 }
-.hotel-guest small { font-weight: 400; color: var(--text2); }
+.hotel-guest small { font-weight: 400; color: var(--text2); font-size: 0.65rem; }
+
+/* 待分配列表 */
+.unassigned-guest {
+  display: flex; flex-direction: column; gap: 1px;
+  padding: 8px 10px; margin-bottom: 4px;
+  background: var(--white); border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer; transition: all 0.12s;
+  font-size: 0.78rem; font-weight: 600;
+}
+.unassigned-guest:hover { background: #F0F4FF; border-color: var(--primary); }
+.unassigned-guest small { font-size: 0.65rem; color: var(--text3); }
 
 /* 预算 */
 .budget-card {

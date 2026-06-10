@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>Prodlink — Producer + Link 影视制片工作台</title>
-  <link rel="stylesheet" href="css/style.css?v=9">
+  <link rel="stylesheet" href="css/style.css?v=10">
 </head>
 <body>
 
@@ -47,7 +47,7 @@
       </div>
     </nav>
     <div class="sb-footer">
-      <div class="sb-version">v2.5</div>
+      <div class="sb-version">v2.6</div>
       <div class="sb-user" onclick="showToast('个人中心即将上线')">
         <span class="sb-avatar">👤</span>
         <span class="sb-username">制片人</span>
@@ -411,7 +411,7 @@
       <!-- 信息收集表单 -->
       <div class="crew-panel active" id="crew-panel-form">
         <div class="card">
-          <div class="form-row"><div class="form-group flex-2"><label>姓名</label><input type="text" id="crew-name"></div><div class="form-group"><label>职位</label><select id="crew-role"><option>导演</option><option>制片</option><option>摄影</option><option>灯光</option><option>美术</option><option>录音</option><option>化妆</option><option>场务</option><option>演员</option><option>其他</option></select></div></div>
+          <div class="form-row"><div class="form-group flex-2"><label>姓名</label><input type="text" id="crew-name"></div><div class="form-group"><label>性别</label><select id="crew-gender"><option>男</option><option>女</option></select></div><div class="form-group"><label>职位</label><select id="crew-role"><option>导演</option><option>制片</option><option>摄影</option><option>灯光</option><option>美术</option><option>录音</option><option>化妆</option><option>场务</option><option>演员</option><option>其他</option></select></div></div>
           <div class="form-row"><div class="form-group"><label>手机号</label><input type="text" id="crew-phone"></div><div class="form-group"><label>微信号</label><input type="text" id="crew-wechat"></div></div>
           <div class="form-row"><div class="form-group"><label>身份证号</label><input type="text" id="crew-idcard"></div><div class="form-group"><label>紧急联系人</label><input type="text" id="crew-emergency" placeholder="姓名 关系 电话"></div></div>
           <div class="form-row"><div class="form-group"><label>饮食</label><select id="crew-diet"><option>无特殊</option><option>素食</option><option>清真</option><option>过敏</option></select></div><div class="form-group"><label>需住宿</label><select id="crew-hotel"><option>否</option><option>是</option></select></div><div class="form-group"><label>到组日</label><input type="date" id="crew-arrive"></div><div class="form-group"><label>离组日</label><input type="date" id="crew-leave"></div></div>
@@ -425,7 +425,7 @@
           <select id="crew-filter-role" style="padding:6px;border:1px solid var(--border);border-radius:4px;font-size:0.8rem;margin-left:8px;" onchange="renderCrewTable()"><option value="">全部职位</option><option>导演</option><option>制片</option><option>摄影</option><option>灯光</option><option>美术</option><option>录音</option><option>化妆</option><option>场务</option><option>演员</option><option>其他</option></select></div>
           <div><button class="btn btn-outline btn-sm" onclick="exportCrewContact()">🖨️ 打印通联表</button></div>
         </div>
-        <div class="table-wrap"><table class="cs-table"><thead><tr><th>姓名</th><th>职位</th><th>手机</th><th>微信</th><th>饮食</th><th>住宿</th><th>到组</th><th>离组</th><th></th></tr></thead><tbody id="crew-table-tbody"></tbody></table></div></div>
+        <div class="table-wrap"><table class="cs-table"><thead><tr><th>姓名</th><th>性别</th><th>职位</th><th>手机</th><th>微信</th><th>饮食</th><th>住宿</th><th>到组</th><th>离组</th><th></th></tr></thead><tbody id="crew-table-tbody"></tbody></table></div></div>
       </div>
     </section>
 
@@ -519,10 +519,10 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-<script src="js/datahub.js?v=9"></script>
-<script src="js/collab.js?v=9"></script>
-<script src="js/app.js?v=9"></script>
-<script src="js/breakdown.js?v=9"></script>
-<script src="js/crew.js?v=9"></script>
+<script src="js/datahub.js?v=10"></script>
+<script src="js/collab.js?v=10"></script>
+<script src="js/app.js?v=10"></script>
+<script src="js/breakdown.js?v=10"></script>
+<script src="js/crew.js?v=10"></script>
 </body>
 </html>
