@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>Prodlink — Producer + Link 影视制片工作台</title>
-  <link rel="stylesheet" href="css/style.css?v=7">
+  <link rel="stylesheet" href="css/style.css?v=8">
 </head>
 <body>
 
@@ -47,7 +47,7 @@
       </div>
     </nav>
     <div class="sb-footer">
-      <div class="sb-version">v2.3</div>
+      <div class="sb-version">v2.4</div>
       <div class="sb-user" onclick="showToast('个人中心即将上线')">
         <span class="sb-avatar">👤</span>
         <span class="sb-username">制片人</span>
@@ -61,10 +61,11 @@
 
     <!-- 协作顶栏 -->
     <div class="collab-bar" id="collab-bar">
-      <span class="collab-status" id="collab-status">📋 本地项目</span>
+      <span class="collab-status" id="collab-status">⚪ 离线</span>
       <div class="collab-actions">
-        <button class="btn btn-ghost btn-sm" onclick="shareProject()" title="分享给团队成员">🔗 分享项目</button>
-        <button class="btn btn-ghost btn-sm" onclick="showImportDialog()" title="导入他人分享的项目">📥 导入项目</button>
+        <button class="btn btn-share btn-sm" onclick="createCollabProject()">🟢 开始协作</button>
+        <button class="btn btn-outline btn-sm" onclick="joinCollabProject()">📥 加入项目</button>
+        <button class="btn btn-ghost btn-sm" onclick="setFirebaseConfig()" title="配置Firebase">⚙️</button>
       </div>
     </div>
 
@@ -515,10 +516,13 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
-<script src="js/datahub.js?v=7"></script>
-<script src="js/collab.js?v=7"></script>
-<script src="js/app.js?v=7"></script>
-<script src="js/breakdown.js?v=7"></script>
-<script src="js/crew.js?v=7"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<script src="js/datahub.js?v=8"></script>
+<script src="js/collab.js?v=8"></script>
+<script src="js/app.js?v=8"></script>
+<script src="js/breakdown.js?v=8"></script>
+<script src="js/crew.js?v=8"></script>
 </body>
 </html>

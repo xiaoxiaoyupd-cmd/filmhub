@@ -991,10 +991,11 @@ body {
    ============================================ */
 .collab-bar {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 16px;
+  padding: 8px 16px; margin-bottom: 16px;
   background: #FAFBFC;
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  gap: 8px; flex-wrap: wrap;
   margin-bottom: 20px;
   flex-wrap: wrap; gap: 6px;
 }

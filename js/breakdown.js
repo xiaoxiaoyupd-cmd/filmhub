@@ -1299,7 +1299,7 @@ function exportBreakdown() {
 }
 
 // --- 存储 ---
-function saveBreakdownData() { localStorage.setItem('fh_breakdown', JSON.stringify({ scenes: AppBreakdown.scenes, days: AppBreakdown.days })); }
+function saveBreakdownData() { localStorage.setItem('fh_breakdown', JSON.stringify({ scenes: AppBreakdown.scenes, days: AppBreakdown.days })); if (Collab._projectId) Collab.pushData(); }
 function loadStoredDays() { try { const d = JSON.parse(localStorage.getItem('fh_breakdown')); return d ? (d.days || []) : []; } catch(e) { return []; } }
 function loadBreakdownData() {
   try {

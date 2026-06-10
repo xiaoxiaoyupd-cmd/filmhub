@@ -431,6 +431,8 @@ function saveCallSheet() {
   };
   localStorage.setItem('fh_callsheet_draft', JSON.stringify(data));
   showToast('草稿已保存 💾');
+  // Firebase 同步
+  if (Collab._projectId) Collab.pushData();
 }
 
 function loadCallSheetDraft() {
@@ -512,6 +514,20 @@ const AppState = {
 function init() {
   loadCallSheetDraft();
   loadBreakdownData();
+
+  // 自动重连 Firebase 项目
+  const savedProjectId = localStorage.getItem('fh_project_id');
+  if (savedProjectId) {
+    setTimeout(async () => {
+      try {
+        const success = await Collab.joinProject(savedProjectId);
+        if (success) updateCollabStatus();
+      } catch(e) {
+        // Firebase 未配置，使用本地模式
+        console.log('Firebase 未配置，使用本地模式');
+      }
+    }, 800);
+  }
 
   // URL分享协作：自动检测导入
   if (window.location.hash.startsWith('#import=')) {
