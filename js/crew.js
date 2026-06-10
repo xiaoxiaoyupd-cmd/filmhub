@@ -40,19 +40,81 @@ function renderCrewTable() {
   if (roleFilter) members = members.filter(m => m.role === roleFilter);
 
   document.getElementById('crew-table-tbody').innerHTML = members.map(m => `
-    <tr>
-      <td><strong>${esc(m.name)}</strong></td><td>${m.gender||'男'}</td><td>${esc(m.role)}</td>
-      <td>${esc(m.phone||'-')}</td><td>${esc(m.wechat||'-')}</td>
-      <td>${esc(m.diet||'-')}</td><td>${m.needHotel?'🏨是':'否'}</td>
-      <td>${m.arriveDate||'-'}</td><td>${m.leaveDate||'-'}</td>
-      <td><button class="btn-icon btn-del" onclick="DataHub.removeCrewMember(${m.id});renderCrewTable();renderHotelPanel();renderBudgetPanel()">✕</button></td>
+    <tr id="crew-row-${m.id}" class="${m._editing ? 'crew-editing' : ''}">
+      ${m._editing ? `
+        <td><input type="text" id="ec-name-${m.id}" value="${escAttr(m.name)}" style="width:70px;"></td>
+        <td><select id="ec-gender-${m.id}"><option ${m.gender==='男'?'selected':''}>男</option><option ${m.gender==='女'?'selected':''}>女</option></select></td>
+        <td><select id="ec-role-${m.id}"><option>导演</option><option>制片</option><option>摄影</option><option>灯光</option><option>美术</option><option>录音</option><option>化妆</option><option>场务</option><option>演员</option><option>其他</option></select></td>
+        <td><input type="text" id="ec-phone-${m.id}" value="${escAttr(m.phone||'')}" style="width:80px;"></td>
+        <td><input type="text" id="ec-wechat-${m.id}" value="${escAttr(m.wechat||'')}" style="width:70px;"></td>
+        <td><select id="ec-diet-${m.id}"><option ${m.diet==='无特殊'?'selected':''}>无特殊</option><option ${m.diet==='素食'?'selected':''}>素食</option><option ${m.diet==='清真'?'selected':''}>清真</option><option ${m.diet==='过敏'?'selected':''}>过敏</option></select></td>
+        <td><select id="ec-hotel-${m.id}"><option ${m.needHotel?'selected':''}>是</option><option ${!m.needHotel?'selected':''}>否</option></select></td>
+        <td><input type="date" id="ec-arrive-${m.id}" value="${m.arriveDate||''}" style="width:90px;"></td>
+        <td><input type="date" id="ec-leave-${m.id}" value="${m.leaveDate||''}" style="width:90px;"></td>
+        <td style="display:flex;gap:3px;">
+          <button class="btn btn-primary btn-sm" onclick="saveCrewEdit(${m.id})" style="padding:2px 8px;font-size:0.65rem;">💾</button>
+          <button class="btn btn-ghost btn-sm" onclick="cancelCrewEdit(${m.id})" style="padding:2px 8px;font-size:0.65rem;">✕</button>
+        </td>
+      ` : `
+        <td><strong>${esc(m.name)}</strong></td><td>${m.gender||'男'}</td><td>${esc(m.role)}</td>
+        <td>${esc(m.phone||'-')}</td><td>${esc(m.wechat||'-')}</td>
+        <td>${esc(m.diet||'-')}</td><td>${m.needHotel?'🏨是':'否'}</td>
+        <td>${m.arriveDate||'-'}</td><td>${m.leaveDate||'-'}</td>
+        <td style="display:flex;gap:3px;">
+          <button class="btn-icon" onclick="editCrewRow(${m.id})" title="编辑" style="color:var(--primary);">✏️</button>
+          <button class="btn-icon btn-del" onclick="DataHub.removeCrewMember(${m.id});renderCrewTable();renderHotelPanel();renderBudgetPanel()">✕</button>
+        </td>
+      `}
     </tr>
   `).join('') || '<tr><td colspan="10" style="text-align:center;padding:20px;color:var(--text3);">暂无组员</td></tr>';
+
+  // 同步选中职位到filter
+  setTimeout(() => {
+    members.filter(m => m._editing).forEach(m => {
+      const sel = document.getElementById('ec-role-' + m.id);
+      if (sel) sel.value = m.role;
+    });
+  }, 50);
 
   // 同步更新酒店和预算
   renderHotelPanel();
   renderBudgetPanel();
 }
+
+// ── 行内编辑 ──
+function editCrewRow(id) {
+  const m = DataHub.crewMembers.find(x => x.id === id);
+  if (!m) return;
+  m._editing = true;
+  renderCrewTable();
+}
+
+function cancelCrewEdit(id) {
+  const m = DataHub.crewMembers.find(x => x.id === id);
+  if (!m) return;
+  m._editing = false;
+  renderCrewTable();
+}
+
+function saveCrewEdit(id) {
+  const m = DataHub.crewMembers.find(x => x.id === id);
+  if (!m) return;
+  m.name     = valEl('ec-name-' + id) || m.name;
+  m.gender   = valEl('ec-gender-' + id) || m.gender;
+  m.role     = valEl('ec-role-' + id) || m.role;
+  m.phone    = valEl('ec-phone-' + id);
+  m.wechat   = valEl('ec-wechat-' + id);
+  m.diet     = valEl('ec-diet-' + id) || m.diet;
+  m.needHotel = valEl('ec-hotel-' + id) === '是';
+  m.arriveDate = valEl('ec-arrive-' + id);
+  m.leaveDate = valEl('ec-leave-' + id);
+  m._editing = false;
+  DataHub.save();
+  renderCrewTable();
+  showToast('已更新: ' + m.name);
+}
+
+function escAttr(s) { return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;'); }
 
 function exportCrewContact() {
   const data = DataHub.exportContactSheet();

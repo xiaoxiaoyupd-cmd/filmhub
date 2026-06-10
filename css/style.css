@@ -415,6 +415,8 @@ body {
 }
 .cs-table tbody tr:last-child td { border-bottom: none; }
 .cs-table tbody tr:hover { background: #F9F9FC; }
+.cs-table tbody tr.crew-editing { background: #FFFDE7; }
+.cs-table tbody tr.crew-editing:hover { background: #FFFDE7; }
 .cs-table input,
 .cs-table select {
   width: 100%;
