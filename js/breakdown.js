@@ -2200,6 +2200,88 @@ function initAssistant() {
   const assigned = sc.filter(s => s.assignedDay).length;
   const unassigned = sc.length - assigned;
 
+  // ── 分析建议 ──
+  const tips = [];
+
+  // 1. 角色出场分析
+  const charAppearances = {}; // {name: {scenes:[], hasDialogue:bool}}
+  const allCharsArr = [...allMain, ...allMinor];
+  allCharsArr.forEach(name => {
+    charAppearances[name] = { scenes: [], hasDialogue: false };
+    // 检查每一场（通过 rawText 判断是否有对白）
+    sc.forEach(s => {
+      const inScene = (s.mainChars||'').includes(name) || (s.minorChars||'').includes(name);
+      if (inScene) {
+        charAppearances[name].scenes.push(s.num);
+        // 检查该角色在该场是否有对白（rawText 中有 "XXX：" 模式）
+        const dialogueRe = new RegExp(name + '[：:]', 'g');
+        if (dialogueRe.test(s.rawText || '')) {
+          charAppearances[name].hasDialogue = true;
+        }
+      }
+    });
+  });
+
+  // 多次出场但从无对白的角色 → 可能是遗漏了对话标注
+  const silentChars = Object.entries(charAppearances)
+    .filter(([, info]) => info.scenes.length >= 2 && !info.hasDialogue)
+    .map(([n, info]) => `${n}(${info.scenes.length}场)`);
+  if (silentChars.length) {
+    tips.push(`👤 <b>${silentChars.join('、')}</b> 在多场戏里出场但从无对白，是否真的没有台词？确认一下` );
+  }
+
+  // 只出场1次的角色
+  const oneOffChars = Object.entries(charAppearances)
+    .filter(([n, info]) => info.scenes.length === 1 && !allMinor.has(n))
+    .map(([n]) => n);
+  if (oneOffChars.length >= 3) {
+    tips.push(`📋 ${oneOffChars.length}个角色只出场1次：${oneOffChars.slice(0, 6).join('、')}${oneOffChars.length > 6 ? '...' : ''}，可能是次要角色，需要重新分类吗？` );
+  }
+
+  // 2. 服装缺失
+  const noCostumeScenes = sc.filter(s => !s.costumes || !s.costumes.trim()).length;
+  if (noCostumeScenes === sc.length && sc.length > 2) {
+    tips.push('👗 <b>所有场次都未标注服装</b>，建议补充特殊服装需求（如"婚纱"、"病号服"、"校服"等）');
+  } else if (noCostumeScenes > sc.length * 0.5) {
+    tips.push(`👗 还有 ${noCostumeScenes} 场未标注服装`);
+  }
+
+  // 3. 道具分析
+  if (keyProps.length > 0) {
+    tips.push('🎒 <b>关键道具(≥2场)</b>：' + keyProps.join('、') + '，拍摄时注意道具连戏');
+    // 检查关键道具是否每次出场都出现在道具列表中
+    const inconsistentProps = keyProps.filter(p => {
+      const scenesWithProp = sc.filter(s => {
+        // 检查 rawText 中是否提到这个道具
+        const re = new RegExp(p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+        return re.test(s.rawText || '');
+      });
+      const scenesMarked = sc.filter(s => (s.props||'').includes(p));
+      return scenesWithProp.length > scenesMarked.length;
+    });
+    if (inconsistentProps.length) {
+      tips.push(`⚠️ 部分关键道具在不同场次间的标记不一致：${inconsistentProps.join('、')}，检查是否有遗漏`);
+    }
+  }
+
+  // 4. 拍摄日分配
+  if (unassigned === sc.length && sc.length > 0) {
+    tips.push('📅 所有场次都还没分配拍摄日，试试"自动分配"或"拍今天"');
+  } else if (unassigned > 0) {
+    tips.push(`📅 还有 ${unassigned} 场未分配拍摄日`);
+  }
+
+  // 5. 位置冲突
+  const locCount = {};
+  sc.forEach(s => { locCount[s.location] = (locCount[s.location]||0) + 1; });
+  const effLoc = Object.entries(locCount).filter(([,c]) => c >= 3);
+  if (effLoc.length) {
+    tips.push(`📍 场景"${effLoc[0][0]}"出现了${effLoc[0][1]}次，建议安排在同一天拍摄以节省转场时间`);
+  }
+
+  // 组装建议
+  const tipsHtml = tips.length ? '\n\n🔍 <b>制片建议：</b>\n' + tips.map(t => '· ' + t).join('\n') : '';
+
   addAsMsg('assistant', `你好！我是 <b>LINK小助手</b> 🤖
 
 📊 <b>剧本全景：</b>
@@ -2211,7 +2293,7 @@ function initAssistant() {
 
 🎒 <b>道具：</b>共${allProps.size}件
 ${keyProps.length ? '· 🔑关键道具(≥2场)：' + keyProps.join('、') + '\n' : ''}
-📅 <b>拍摄日：</b>已分配${assigned}场 | 未分配${unassigned}场
+📅 <b>拍摄日：</b>已分配${assigned}场 | 未分配${unassigned}场${tipsHtml}
 
 💡 <b>试试：</b>"第3场改成夜外" "主角是妈妈和女儿" "第1场有哪些角色？" "撤销" "确认无误"`);
   persistAssistantHistory();
