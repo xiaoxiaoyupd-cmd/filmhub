@@ -159,66 +159,48 @@ function renderHotelPanel() {
   rooms.forEach(r => r.occupants.forEach(cid => allOccupied.add(String(cid))));
   const unassigned = needHotel.filter(m => !allOccupied.has(String(m.id)));
 
-  // 房间统计（含单人标志）
-  const filledRooms = rooms.filter(r => r.occupants.length === 2).length;
+  const filledLo = rooms.filter(r => r.occupants.length === 2).length;
   const halfRooms = rooms.filter(r => r.occupants.length === 1).length;
-  const emptyRooms = rooms.filter(r => r.occupants.length === 0).length;
 
   container.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
-      <span>共 <b>${needHotel.length}</b> 人需住宿 · ${rooms.length}间房 · ${filledRooms}满房 ${halfRooms}单人间${emptyRooms ? ' · '+emptyRooms+'空房' : ''}</span>
+      <span style="font-weight:700;font-size:0.9rem;">🏨 酒店安排 · ${needHotel.length}人需住宿 · ${rooms.length}间房 · ${filledLo}间满 · ${halfRooms}间单人</span>
       <div style="display:flex;gap:6px;">
-        <button class="btn btn-ghost btn-sm" onclick="autoAssignRoomsAndRefresh()" title="按性别+日期+同组自动分配">🪄 自动分配</button>
+        <button class="btn btn-primary btn-sm" onclick="autoAssignRoomsAndRefresh()">🪄 自动分配</button>
         <button class="btn btn-outline btn-sm" onclick="addHotelRoom()">+ 加房间</button>
-        <button class="btn btn-outline btn-sm" onclick="exportHotelSheet()">🖨️ 打印</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportHotelSheet()">🖨️ 打印</button>
       </div>
     </div>
 
-    <!-- 双栏：待分配 + 房间 -->
-    <div style="display:grid;grid-template-columns:280px 1fr;gap:16px;align-items:start;">
-      <!-- 左：待分配列表 -->
-      <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:12px;">
-        <div style="font-weight:700;font-size:0.82rem;margin-bottom:8px;">📋 待分配 (${unassigned.length}人)</div>
-        ${unassigned.length === 0
-          ? '<div style="font-size:0.72rem;color:var(--text3);padding:8px;">全部已分配 ✅</div>'
-          : unassigned.map(m => `
-            <div class="unassigned-guest" onclick="quickAssign(${m.id})" title="点击自动匹配房间">
-              <span>${m.gender==='女'?'♀️':m.gender==='男'?'♂️':'👤'} ${esc(m.name)}</span>
-              <small>${esc(m.role)} · ${m.arriveDate||'?'}→${m.leaveDate||'?'}</small>
-            </div>`).join('')}
-      </div>
-
-      <!-- 右：房间网格 -->
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;">
+    <div class="hotel-main-layout">
+      <!-- 房间列表（主体） -->
+      <div class="hotel-rooms-section">
         ${rooms.map((r, ri) => {
           const occs = r.occupants.map(cid => DataHub.crewMembers.find(x => String(x.id) === String(cid))).filter(Boolean);
-          const hasMale = occs.some(o => o.gender === '男');
-          const hasFemale = occs.some(o => o.gender === '女');
-          const genderConflict = hasMale && hasFemale;
-
           return `
-          <div class="hotel-room-card" style="${r.occupants.length===2?'border-color:var(--success);background:#F8FFF8;':''}${genderConflict?'border-color:var(--danger);background:#FFF8F8;':''}">
+          <div class="hotel-room-card">
             <div class="room-header">
-              <span>🏨 ${r.room}</span>
-              <span>${r.occupants.length}人</span>
-              <span style="display:flex;gap:2px;">
-                <button class="btn-icon" onclick="removeHotelRoom(${ri})" title="删除房间" style="font-size:0.6rem;">🗑</button>
-              </span>
+              <span class="room-seq">第${ri+1}间</span>
+              <input type="text" class="room-num-input" value="${esc(r.room)}"
+                onchange="updateRoomNumber(${ri}, this.value)" placeholder="输入房号">
+              <span class="room-count">${r.occupants.length}/2人</span>
+              <button class="btn-icon btn-del" onclick="removeHotelRoom(${ri})" title="删除房间">🗑</button>
             </div>
             <div class="room-occupants">
-              ${occs.length === 0 ? '<span style="font-size:0.7rem;color:var(--text3);">空房</span>' : ''}
-              ${occs.map(o => `
-                <span class="hotel-guest" style="${o.gender==='女'?'background:#FFE8EC;border-color:#FFB8C6;':''}">
-                  ${esc(o.name)}
-                  <small>${esc(o.gender||'')} ${esc(o.role)} ${o.arriveDate||''}</small>
-                  <span style="cursor:pointer;margin-left:2px;color:var(--danger);font-weight:700;" onclick="removeFromRoom(${ri},${o.id})" title="移除">✕</span>
-                </span>`).join('')}
+              ${occs.length === 0 ? '<span class="room-empty-hint">空房，从右侧拖人进来</span>' : ''}
+              ${occs.map(o => {
+                const dateStr = fmtDateRange(o.arriveDate, o.leaveDate);
+                return `<div class="hotel-guest">
+                  <span class="guest-main">${esc(o.name)} <em>${esc(o.role)}</em></span>
+                  ${dateStr ? `<span class="guest-date">${dateStr}</span>` : ''}
+                  <span class="guest-remove" onclick="removeFromRoom(${ri},${o.id})" title="移出房间">✕</span>
+                </div>`;
+              }).join('')}
             </div>
-            ${genderConflict ? '<div style="font-size:0.6rem;color:var(--danger);margin-top:2px;">⚠️ 性别冲突</div>' : ''}
             ${occs.length < 2 ? `
-            <div style="margin-top:6px;border-top:1px solid var(--border);padding-top:6px;">
-              <select style="width:100%;padding:4px;font-size:0.7rem;border:1px solid var(--border);border-radius:4px;" onchange="moveToRoom(${ri}, this.value)">
-                <option value="">+ 添加到此房间</option>
+            <div class="room-add-row">
+              <select onchange="moveToRoom(${ri}, this.value)">
+                <option value="">+ 添加人员</option>
                 ${needHotel
                   .filter(m => !rooms.some(r2 => r2.occupants.map(String).includes(String(m.id))))
                   .map(m => `<option value="${m.id}">${esc(m.name)} (${m.gender||'?'}) ${esc(m.role)}</option>`).join('')}
@@ -227,8 +209,40 @@ function renderHotelPanel() {
           </div>`;
         }).join('')}
       </div>
+
+      <!-- 右侧待分配列表 -->
+      <div class="hotel-unassigned">
+        <div class="unassigned-title">📋 待分配 · ${unassigned.length}人</div>
+        <div class="unassigned-list">
+          ${unassigned.length === 0
+            ? '<div class="unassigned-done">全部已分配 ✓</div>'
+            : unassigned.map(m => `
+              <div class="unassigned-guest" onclick="quickAssign(${m.id})">
+                <span>${esc(m.name)} <em>${esc(m.role)}</em></span>
+                <small>${fmtDateRange(m.arriveDate, m.leaveDate)||'未填日期'}</small>
+              </div>`).join('')}
+        </div>
+      </div>
     </div>
   `;
+}
+
+// ── 日期格式化 ──
+function fmtDateRange(arrive, leave) {
+  if (!arrive && !leave) return '';
+  const a = arrive ? arrive.replace(/-/g, '/').replace(/^(\d{4})\/(\d)(?=\/)/, '$1/$2') : '';
+  const l = leave ? leave.replace(/-/g, '/').replace(/^(\d{4})\/(\d)(?=\/)/, '$1/$2') : '';
+  if (a && l) return a + ' - ' + l;
+  return a || l;
+}
+
+// ── 编辑房号 ──
+function updateRoomNumber(roomIdx, newNumber) {
+  const rooms = [...DataHub.hotelRooms];
+  if (rooms[roomIdx]) {
+    rooms[roomIdx].room = newNumber.trim() || rooms[roomIdx].room;
+  }
+  DataHub.updateHotelRooms(rooms);
 }
 
 // ── 一键快捷分配 ──

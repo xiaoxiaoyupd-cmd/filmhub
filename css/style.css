@@ -963,25 +963,82 @@ body {
 .crew-panel.active { display: block; }
 
 /* 酒店 */
-.hotel-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.hotel-main-layout {
+  display: grid;
+  grid-template-columns: 1fr 240px;
+  gap: 16px; align-items: start;
+}
+
+/* 房间卡片 */
 .hotel-room-card {
   border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 12px; background: #FAFBFC;
+  padding: 14px 16px; background: var(--white);
+  margin-bottom: 10px;
 }
-.room-header { font-weight: 700; font-size: 0.85rem; display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.room-header span { font-size: 0.7rem; color: var(--text2); margin-left: auto; }
-.room-occupants { display: flex; flex-wrap: wrap; gap: 4px; }
-.hotel-guest {
-  display: inline-flex; align-items: center; gap: 2px;
-  padding: 4px 8px;
-  background: #E8F5E9; border: 1px solid #C8E6C9;
-  border-radius: 12px; font-size: 0.73rem; font-weight: 600;
+.hotel-room-card:hover { box-shadow: var(--shadow-hv); }
+.room-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.room-seq {
+  font-size: 0.75rem; font-weight: 700; color: var(--primary);
+  white-space: nowrap;
 }
-.hotel-guest small { font-weight: 400; color: var(--text2); font-size: 0.65rem; }
+.room-num-input {
+  width: 80px; padding: 4px 8px;
+  border: 1px solid var(--border); border-radius: 4px;
+  font-size: 0.82rem; font-weight: 700; text-align: center;
+  color: var(--text); background: var(--white);
+  outline: none; font-family: var(--font);
+}
+.room-num-input:focus { border-color: var(--primary); }
+.room-count { font-size: 0.72rem; color: var(--text2); margin-left: auto; }
+.room-empty-hint { font-size: 0.72rem; color: var(--text3); padding: 4px 0; }
 
-/* 待分配列表 */
+.room-occupants { display: flex; flex-direction: column; gap: 4px; }
+.hotel-guest {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border); border-radius: 8px;
+  font-size: 0.82rem; font-weight: 600;
+}
+.hotel-guest .guest-main em { font-weight: 400; font-style: normal; color: var(--text2); font-size: 0.78rem; }
+.hotel-guest .guest-date { margin-left: auto; font-size: 0.7rem; color: var(--text2); }
+.hotel-guest .guest-remove { cursor: pointer; color: var(--text3); font-weight: 700; font-size: 0.75rem; }
+.hotel-guest .guest-remove:hover { color: var(--danger); }
+
+.room-add-row { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+.room-add-row select {
+  width: 100%; padding: 6px 8px;
+  border: 1px solid var(--border); border-radius: 4px;
+  font-size: 0.75rem; color: var(--text); outline: none;
+}
+
+/* 待分配面板 */
+.hotel-unassigned {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: #FAFBFC; padding: 12px;
+}
+.unassigned-title { font-weight: 700; font-size: 0.82rem; margin-bottom: 8px; }
+.unassigned-done { font-size: 0.75rem; color: var(--text2); padding: 4px; }
+.unassigned-list { display: flex; flex-direction: column; gap: 3px; }
 .unassigned-guest {
-  display: flex; flex-direction: column; gap: 1px;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 8px 10px;
+  background: var(--white); border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer; transition: all 0.12s;
+  font-size: 0.78rem; font-weight: 600;
+}
+.unassigned-guest:hover { background: #F0F4FF; border-color: var(--primary); }
+.unassigned-guest em { font-weight: 400; font-style: normal; color: var(--text2); font-size: 0.72rem; }
+.unassigned-guest small { font-size: 0.68rem; color: var(--text3); }
+
+@media (max-width: 700px) {
+  .hotel-main-layout {
+    grid-template-columns: 1fr;
+  }
+  .hotel-unassigned { order: 2; }
+}
+
+/* 预算 */
   padding: 8px 10px; margin-bottom: 4px;
   background: var(--white); border: 1px solid var(--border);
   border-radius: var(--radius);
